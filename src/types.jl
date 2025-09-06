@@ -120,8 +120,7 @@ const ConvertAType = Dict(
 # Main output data type
 mutable struct MATFile
     path::String
-    ios::IOStream
-    version::String
+    version::UInt16
     endian::String
     data::NamedTuple
 end
