@@ -1,15 +1,17 @@
 function read_mat(file)
     open(file, "r") do io
-        
-        version, endian, fsize = parse_header(io)
+        # Parse information from the header
+        version, endian, fsize = read_header(io)
 
-        data = parse_data(io, fsize)
+        # Create an empty file to store pointer to stream and endian info
+        mFile = MATFile(abspath(file), f, version, endian, NamedTuple())
+        read_data!(mFile, fsize)
 
-        return MATFile(abspath(file), version, endian, data)
+        return mFile
     end
 end
 
-function parse_header(io::IO)
+function read_header(mFile::MATFile)
     # Check the version of file.
     # MAT file v4 starts with four bytes set to zero
     magic = peek(io, Int32)
@@ -43,6 +45,45 @@ function parse_header(io::IO)
     return version, endian, fsize
 end
 
-function parse_data(io, fsize)
-    return NamedTuple()
+# Main reading function
+function read_data!(mFile::MATFile, fsize::Int)
+    # Top level consists of subsequent matrices (not know upfront).
+    # We'll collect their labels and contents to merge them into a NamedTuple at the end.
+    labels = Symbol[]
+    contents = Any[]
+
+    while position(mFile) < fsize
+        label, content = read_data(mFile)
+        push!(labels, Symbol(label))
+        push!(contents, content)
+    end
+
+    mFile.data = NamedTuple(zip(labels, contents))
+
+    return nothing
+end
+
+# Reading top level structures (should always be matrices)
+function read_data(mFile::MATFile)
+    
+end
+
+function parse_tag(mFile::MATFile)
+    # Check for compressed format
+    temp = read(mFile, miUINT32)
+    # In compressed, two higher bytes represent the size.
+    # If they are zero, either this is a long format or an empty data container.
+    if temp < 256
+        dataType = get_dtype(temp)
+        size = read(mFile, miUINT32)
+        # Account for padding to 8 bytes
+        psize = cld(size, 8) * 8
+    else
+        d, size = reinterpret(NTuple{2, UInt16}, temp)
+        dataType = get_dtype(d)
+        # Account for padding to 8 bytes
+        psize = cld(size+4, 8) * 8 - 4
+    end
+
+    return dataType, size, psize
 end

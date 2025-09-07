@@ -2,7 +2,6 @@
 abstract type MatType end
 
 abstract type MatNumber <: MatType end
-abstract type MatUnicode <: MatType end
 
 struct miINT8       <: MatNumber end
 struct miUINT8      <: MatNumber end
@@ -16,9 +15,9 @@ struct miINT64      <: MatNumber end
 struct miUINT64     <: MatNumber end
 struct miMATRIX     <: MatType end
 struct miCOMPRESSED <: MatType end
-struct miUTF8       <: MatUnicode end
-struct miUTF16      <: MatUnicode end
-struct miUTF32      <: MatUnicode end
+struct miUTF8       <: MatNumber end
+struct miUTF16      <: MatNumber end
+struct miUTF32      <: MatNumber end
 
 const DataType = Dict(
     1  => miINT8,
@@ -120,7 +119,47 @@ const ConvertAType = Dict(
 # Main output data type
 mutable struct MATFile
     path::String
+    io::IO
     version::UInt16
     endian::String
     data::NamedTuple
 end
+
+# Convenience functions to read Matlab data types
+function Base.read(mFile::MATFile, type::Type{<:MatNumber})
+    # Convert Matlab type to Julia
+    jType = ConvertType[type]
+
+    # Handle endianess
+    sysEnd = ENDIAN_BOM == 0x04030201 ? "IM" : "MI"
+
+    if sysEnd == mFile.endian
+        return read(mFile.io, jType)
+    elseif sysEnd == "IM"
+        return ntoh(read(mFile.io, jType))
+    else
+        return ltoh(read(mFile.io, jType))
+    end
+end
+
+function Base.read(mFile::MATFile, type::Type{<:MatNumber}, dims)
+    # Convert Matlab type to Julia
+    jType = ConvertType[type]
+
+    # Handle endianess
+    sysEnd = ENDIAN_BOM == 0x04030201 ? "IM" : "MI"
+
+    if sysEnd == mFile.endian
+        return read(mFile.io, jType, dims)
+    elseif sysEnd == "IM"
+        return ntoh(read(mFile.io, jType, dims))
+    else
+        return ltoh(read(mFile.io, jType, dims))
+    end
+end
+
+Base.peek(mFile::MATFile, T::Type) = peek(mFile.io, T)
+Base.seek(mFile::MATFile, N::Number) = seek(mFile.io, N)
+Base.skip(mFile::MATFile, N::Number) = skip(mFile.io, N)
+Base.seekend(mFile::MATFile) = seekend(mFile.io)
+Base.position(mFile::MATFile) = position(mFile.io)
