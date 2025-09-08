@@ -108,16 +108,15 @@ function read_data(mFile::MATFile, ::Type{miMATRIX}, size)
     # Matlab uses them as placeholders for empty elements
     size == 0 && return "", Array{Float64}(undef, 0, 0)
 
-    arrayType, c, g, l, _ = parse_flags(mFile)
+    arrayType, c, g, l, nzmax = parse_flags(mFile)
     dims = parse_dimensions(mFile)
     name = parse_name(mFile)
 
-    data = read_data(mFile, arrayType, dims)
-
-    # Add the imaginary part if matrix contains complex numbers
-    if c == '1'
-        data = Complex.(data, read_data(mFile, arrayType, dims))
-    end
+    data = read_data(mFile, arrayType, dims, c)
+    # # Add the imaginary part if matrix contains complex numbers
+    # if c == '1'
+    #     data = Complex.(data, read_data(mFile, arrayType, dims))
+    # end
 
     return name, data
 end
@@ -140,7 +139,7 @@ end
 function parse_dimensions(mFile::MATFile)
     dataType, size, psize = parse_tag(mFile)
 
-    ndims = size ÷ 4
+    ndims = size ÷ sizeof(dataType)
     dims = read(mFile, dataType, ndims)
 
     #Account for possible padding
@@ -158,7 +157,7 @@ function parse_name(mFile::MATFile)
 end
 
 # Read matrix types containing numbers or chars
-function read_data(mFile::MATFile, T::Type{<:NumArray}, dims)
+function read_data(mFile::MATFile, T::Type{<:NumArray}, dims, c)
     dataType, size, psize = parse_tag(mFile)
 
     tmp = read(mFile, dataType, dims)
@@ -176,5 +175,38 @@ function read_data(mFile::MATFile, T::Type{<:NumArray}, dims)
     #Account for possible padding
     skip_padding!(mFile, size, psize)
 
+    # Add the imaginary part if matrix contains complex numbers
+    if c == '1'
+        data = Complex.(data, read_data(mFile, T, dims, 0))
+    end
+
     return data
+end
+
+# Read sparse matrix type
+function read_data(mFile::MATFile, ::Type{mxSPARSE_CLASS}, dims, c)
+    # Indices have the same structure as dimensions subelement, so we reuse the method
+    rowIds = Int.(parse_dimensions(mFile))
+    colIds = Int.(parse_dimensions(mFile)) .+ 1
+
+    dataType, size, psize = parse_tag(mFile)
+
+    # Parameter `dims` reflects full dimensions of the matrix, so we estimate the number
+    # of elements from size from the tag
+    N = size ÷ sizeof(dataType)
+    data = read(mFile, dataType, N)
+
+    #Account for possible padding
+    skip_padding!(mFile, size, psize)
+
+    # Add the imaginary part if matrix contains complex numbers
+    if c == '1'
+        data = Complex.(data, read(mFile, dataType, N))
+
+        #Account for possible padding as both real and imaginary part should match is size
+        skip_padding!(mFile, size, psize)
+    end
+
+    smatrix = SparseMatrixCSC(dims..., colIds, rowIds, data)
+    return smatrix
 end

@@ -3,7 +3,11 @@ uuid = "e0c5a735-509d-42f9-94ca-5bb507e3a62b"
 authors = ["Marcin Koculak <koculak.marcin@gmail.com> and contributors"]
 version = "0.1.0-DEV"
 
+[deps]
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+
 [compat]
+SparseArrays = "1.11.0"
 julia = "1.10"
 
 [extras]

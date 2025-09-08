@@ -161,6 +161,8 @@ end
 Base.read(mFile::MATFile, T::Type) = read(mFile.io, T)
 Base.read(mFile::MATFile, N::Number) = read(mFile.io, N)
 
+Base.sizeof(T::Type{<:MatNumber}) = sizeof(ConvertType[T])
+
 Base.peek(mFile::MATFile, T::Type) = peek(mFile.io, T)
 Base.seek(mFile::MATFile, N::Number) = seek(mFile.io, N)
 Base.skip(mFile::MATFile, N::Number) = skip(mFile.io, N)
