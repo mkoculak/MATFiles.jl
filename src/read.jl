@@ -210,3 +210,20 @@ function read_data(mFile::MATFile, ::Type{mxSPARSE_CLASS}, dims, c)
     smatrix = SparseMatrixCSC(dims..., colIds, rowIds, data)
     return smatrix
 end
+
+function read_data(mFile::MATFile, ::Type{mxCELL_CLASS}, dims, c)
+    data = Array{Any}(undef, Tuple(dims))
+
+    for i in range(1,prod(dims))
+        # We ignore the `name` as it should be empty
+        name, tmp = read_data(mFile)
+        data[i] = tmp
+    end
+
+    # Check if it can be easily brought into a concrete type
+    if isconcretetype(typejoin(typeof.(data)...))
+        data = identity.(data)
+    end
+
+    return data
+end
