@@ -211,6 +211,7 @@ function read_data(mFile::MATFile, ::Type{mxSPARSE_CLASS}, dims, c)
     return smatrix
 end
 
+# Read cell arrays
 function read_data(mFile::MATFile, ::Type{mxCELL_CLASS}, dims, c)
     data = Array{Any}(undef, Tuple(dims))
 
@@ -226,4 +227,39 @@ function read_data(mFile::MATFile, ::Type{mxCELL_CLASS}, dims, c)
     end
 
     return data
+end
+
+# Read struct arrays
+function read_data(mFile::MATFile, ::Type{mxSTRUCT_CLASS}, dims, c)
+    # Get the number of names/fields in the struct
+    nameLen = parse_dimensions(mFile)
+    sNames = parse_names(mFile, nameLen)
+    
+    structs = NamedTuple[]
+    # Account for a matrix of structs
+    for j in 1:prod(dims)
+        sData = []
+        for i in sNames
+            name, data = read_data(mFile)
+            push!(sData, data)
+        end
+        push!(structs, NamedTuple(zip(sNames, sData)))
+    end
+
+    return structs
+end
+
+function parse_names(mFile::MATFile, nameLen)
+    dataType, size, psize = parse_tag(mFile)
+
+    nNames = Int(size ÷ nameLen[1])
+    names = [read(mFile, dataType, nameLen[1]) for i in 1:nNames]
+
+    #Account for possible padding
+    skip_padding!(mFile, size, psize)
+
+    names = map(x -> strip(String(Char.(x)), '\0'), names)
+
+    # Need symbols for construction of a NamedTuple
+    return Symbol.(names)
 end
