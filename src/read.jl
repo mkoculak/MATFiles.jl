@@ -4,14 +4,14 @@ function read_mat(file)
         version, endian, fsize = read_header(io)
 
         # Create an empty file to store pointer to stream and endian info
-        mFile = MATFile(abspath(file), f, version, endian, NamedTuple())
+        mFile = MATFile(abspath(file), io, version, endian, NamedTuple())
         read_data!(mFile, fsize)
 
         return mFile
     end
 end
 
-function read_header(mFile::MATFile)
+function read_header(io::IO)
     # Check the version of file.
     # MAT file v4 starts with four bytes set to zero
     magic = peek(io, Int32)
@@ -155,4 +155,26 @@ function parse_name(mFile::MATFile)
 
     skip_padding!(mFile, size, psize)
     return name
+end
+
+# Read matrix types containing numbers or chars
+function read_data(mFile::MATFile, T::Type{<:NumArray}, dims)
+    dataType, size, psize = parse_tag(mFile)
+
+    tmp = read(mFile, dataType, dims)
+
+    # Account for Matlab's compressing data into smaller types
+    if T == mxCHAR_CLASS
+        data = Char.(tmp)
+    elseif ConvertType[dataType] != ConvertAType[T]
+        data = similar(tmp, ConvertAType[T])
+        data .= tmp
+    else
+        data = tmp
+    end
+
+    #Account for possible padding
+    skip_padding!(mFile, size, psize)
+
+    return data
 end

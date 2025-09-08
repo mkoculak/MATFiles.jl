@@ -145,18 +145,21 @@ end
 function Base.read(mFile::MATFile, type::Type{<:MatNumber}, dims)
     # Convert Matlab type to Julia
     jType = ConvertType[type]
+    data = zeros(jType, Tuple(dims))
+    read!(mFile.io, data)
 
     # Handle endianess
     sysEnd = ENDIAN_BOM == 0x04030201 ? "IM" : "MI"
 
-    if sysEnd == mFile.endian
-        return read(mFile.io, jType, dims)
-    elseif sysEnd == "IM"
-        return ntoh(read(mFile.io, jType, dims))
-    else
-        return ltoh(read(mFile.io, jType, dims))
+    if sysEnd != mFile.endian
+        data = sysEnd == "IM" ? ntoh(data) : ltoh(data)
     end
+
+    return data
 end
+
+Base.read(mFile::MATFile, T::Type) = read(mFile.io, T)
+Base.read(mFile::MATFile, N::Number) = read(mFile.io, N)
 
 Base.peek(mFile::MATFile, T::Type) = peek(mFile.io, T)
 Base.seek(mFile::MATFile, N::Number) = seek(mFile.io, N)
