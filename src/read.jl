@@ -48,24 +48,31 @@ end
 # Main reading function
 function read_data!(mFile::MATFile, fsize::Int)
     # Top level consists of subsequent matrices (not know upfront).
-    # We'll collect their labels and contents to merge them into a NamedTuple at the end.
-    labels = Symbol[]
+    # We'll collect their names and contents to merge them into a NamedTuple at the end.
+    names = Symbol[]
     contents = Any[]
 
     while position(mFile) < fsize
-        label, content = read_data(mFile)
-        push!(labels, Symbol(label))
+        name, content = read_data(mFile)
+        push!(names, Symbol(name))
         push!(contents, content)
     end
 
-    mFile.data = NamedTuple(zip(labels, contents))
+    mFile.data = NamedTuple(zip(names, contents))
 
     return nothing
 end
 
 # Reading top level structures (should always be matrices)
 function read_data(mFile::MATFile)
-    
+    dataType, size, psize = parse_tag(mFile)
+
+    name, content = read_data(mFile, dataType, size)
+
+    #Account for possible padding
+    skip_padding!(mFile, size, psize)
+
+    return name, content
 end
 
 function parse_tag(mFile::MATFile)
@@ -86,4 +93,66 @@ function parse_tag(mFile::MATFile)
     end
 
     return dataType, size, psize
+end
+
+function skip_padding!(mFile::MATFile, size, psize)
+    if psize != size
+        skip(mFile.io, psize - size)
+    end
+    return nothing
+end
+
+# Read the content of Matrix data type (should always contain other data types)
+function read_data(mFile::MATFile, ::Type{miMATRIX}, size)
+    # Account for empty matrices (always resolved to a numerical array)
+    # Matlab uses them as placeholders for empty elements
+    size == 0 && return "", Array{Float64}(undef, 0, 0)
+
+    arrayType, c, g, l, _ = parse_flags(mFile)
+    dims = parse_dimensions(mFile)
+    name = parse_name(mFile)
+
+    data = read_data(mFile, arrayType, dims)
+
+    # Add the imaginary part if matrix contains complex numbers
+    if c == '1'
+        data = Complex.(data, read_data(mFile, arrayType, dims))
+    end
+
+    return name, data
+end
+
+function parse_flags(mFile::MATFile)
+    dataType, size, psize = parse_tag(mFile)
+
+    # Written as UInt32, but data stored in separate bytes
+    tmp = reinterpret(NTuple{4, UInt8}, read(mFile, dataType))
+    # Get the importants bits for complex, global, and local flag
+    _, _, _, _, c, g, l, _ = bitstring(tmp[2])
+    arrayType = get_atype(tmp[1])
+
+    # Second 4 bytes only used in sparse arrays
+    nzmax = read(mFile, dataType)
+
+    return arrayType, c, g, l, nzmax
+end
+
+function parse_dimensions(mFile::MATFile)
+    dataType, size, psize = parse_tag(mFile)
+
+    ndims = size ÷ 4
+    dims = read(mFile, dataType, ndims)
+
+    #Account for possible padding
+    skip_padding!(mFile, size, psize)
+
+    return dims
+end
+
+function parse_name(mFile::MATFile)
+    dataType, size, psize = parse_tag(mFile)
+    name = String(read(mFile, size))
+
+    skip_padding!(mFile, size, psize)
+    return name
 end
