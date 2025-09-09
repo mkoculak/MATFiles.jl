@@ -152,7 +152,7 @@ function Base.read(mFile::MATFile, type::Type{<:MatNumber}, dims)
     sysEnd = ENDIAN_BOM == 0x04030201 ? "IM" : "MI"
 
     if sysEnd != mFile.endian
-        data = sysEnd == "IM" ? ntoh(data) : ltoh(data)
+        data = sysEnd == "IM" ? ntoh.(data) : ltoh.(data)
     end
 
     return data

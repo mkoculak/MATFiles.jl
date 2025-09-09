@@ -39,8 +39,10 @@ function read_header(io::IO)
 
     # Version field in v5 should have 0x0100 in big endian encoding
     version = read(io, UInt16)
-    version == 0x0100 || @warn "Version number mismatch, got $version (expected 0x0100)."
     endian = String(read(io, 2))
+
+    corr_ver = endian == "IM" ? 0x0100 : 0x0001
+    version == corr_ver || @warn "Version number mismatch, got $version (expected $corr_ver)."
 
     return version, endian, fsize
 end
@@ -65,7 +67,6 @@ end
 
 # Reading top level structures (should always be matrices)
 function read_data(mFile::MATFile)
-    @info position(mFile)
     dataType, size, psize = parse_tag(mFile)
 
     name, content = read_data(mFile, dataType, size)
@@ -169,7 +170,16 @@ function read_data(mFile::MATFile, T::Type{<:NumArray}, c)
 
     dataType, size, psize = parse_tag(mFile)
 
-    tmp = read(mFile, dataType, dims)
+    # Make sure declared size matches data type x dimensions of an array
+    if size == 0
+        tmp = Array{dataType}(undef, 0,0)
+    elseif sizeof(ConvertType[dataType]) * prod(dims) != size
+        println(position(mFile))
+        error("Requested array of type $(ConvertType[dataType]) \
+        and dimensions $(Int.(dims)) does not match delcared size $size.")
+    else
+        tmp = read(mFile, dataType, dims)
+    end
 
     # Account for Matlab's compressing data into smaller types
     if T == mxCHAR_CLASS
@@ -252,7 +262,7 @@ function read_data(mFile::MATFile, ::Type{mxSTRUCT_CLASS}, c)
     # Get the number of names/fields in the struct
     nameLen = parse_dimensions(mFile)
     sNames = parse_names(mFile, nameLen)
-    
+
     structs = NamedTuple[]
     # Account for a matrix of structs
     for j in 1:prod(dims)
