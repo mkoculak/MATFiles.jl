@@ -109,16 +109,18 @@ function read_data(mFile::MATFile, ::Type{miMATRIX}, size)
     size == 0 && return "", Array{Float64}(undef, 0, 0)
 
     arrayType, c, g, l, nzmax = parse_flags(mFile)
-    dims = parse_dimensions(mFile)
-    name = parse_name(mFile)
 
-    data = read_data(mFile, arrayType, dims, c)
-    # # Add the imaginary part if matrix contains complex numbers
-    # if c == '1'
-    #     data = Complex.(data, read_data(mFile, arrayType, dims))
-    # end
+    name, data = read_data(mFile, arrayType, c)
 
     return name, data
+end
+
+function read_data(mFile::MATFile, ::Type{miCOMPRESSED}, size)
+    mFile.io = ZlibDecompressorStream(mFile.io)
+
+    dataType, size, psize = parse_tag(mFile)
+
+    return read_data(mFile, dataType, size)
 end
 
 function parse_flags(mFile::MATFile)
@@ -157,7 +159,10 @@ function parse_name(mFile::MATFile)
 end
 
 # Read matrix types containing numbers or chars
-function read_data(mFile::MATFile, T::Type{<:NumArray}, dims, c)
+function read_data(mFile::MATFile, T::Type{<:NumArray}, c)
+    dims = parse_dimensions(mFile)
+    name = parse_name(mFile)
+
     dataType, size, psize = parse_tag(mFile)
 
     tmp = read(mFile, dataType, dims)
@@ -177,14 +182,17 @@ function read_data(mFile::MATFile, T::Type{<:NumArray}, dims, c)
 
     # Add the imaginary part if matrix contains complex numbers
     if c == '1'
-        data = Complex.(data, read_data(mFile, T, dims, 0))
+        data = Complex.(data, read_data(mFile, T, 0))
     end
 
-    return data
+    return name, data
 end
 
 # Read sparse matrix type
-function read_data(mFile::MATFile, ::Type{mxSPARSE_CLASS}, dims, c)
+function read_data(mFile::MATFile, ::Type{mxSPARSE_CLASS}, c)
+    dims = parse_dimensions(mFile)
+    name = parse_name(mFile)
+
     # Indices have the same structure as dimensions subelement, so we reuse the method
     rowIds = Int.(parse_dimensions(mFile))
     colIds = Int.(parse_dimensions(mFile)) .+ 1
@@ -208,11 +216,14 @@ function read_data(mFile::MATFile, ::Type{mxSPARSE_CLASS}, dims, c)
     end
 
     smatrix = SparseMatrixCSC(dims..., colIds, rowIds, data)
-    return smatrix
+    return name, smatrix
 end
 
 # Read cell arrays
-function read_data(mFile::MATFile, ::Type{mxCELL_CLASS}, dims, c)
+function read_data(mFile::MATFile, ::Type{mxCELL_CLASS}, c)
+    dims = parse_dimensions(mFile)
+    name = parse_name(mFile)
+
     data = Array{Any}(undef, Tuple(dims))
 
     for i in range(1,prod(dims))
@@ -226,11 +237,14 @@ function read_data(mFile::MATFile, ::Type{mxCELL_CLASS}, dims, c)
         data = identity.(data)
     end
 
-    return data
+    return name, data
 end
 
 # Read struct arrays
-function read_data(mFile::MATFile, ::Type{mxSTRUCT_CLASS}, dims, c)
+function read_data(mFile::MATFile, ::Type{mxSTRUCT_CLASS}, c)
+    dims = parse_dimensions(mFile)
+    name = parse_name(mFile)
+
     # Get the number of names/fields in the struct
     nameLen = parse_dimensions(mFile)
     sNames = parse_names(mFile, nameLen)
@@ -246,7 +260,7 @@ function read_data(mFile::MATFile, ::Type{mxSTRUCT_CLASS}, dims, c)
         push!(structs, NamedTuple(zip(sNames, sData)))
     end
 
-    return structs
+    return name, structs
 end
 
 function parse_names(mFile::MATFile, nameLen)

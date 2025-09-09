@@ -4,9 +4,11 @@ authors = ["Marcin Koculak <koculak.marcin@gmail.com> and contributors"]
 version = "0.1.0-DEV"
 
 [deps]
+CodecZlib = "944b1d66-785c-5afd-91f1-9de20f533193"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 
 [compat]
+CodecZlib = "0.7.8"
 SparseArrays = "1.11.0"
 julia = "1.10"
 
