@@ -65,12 +65,10 @@ end
 
 # Reading top level structures (should always be matrices)
 function read_data(mFile::MATFile)
+    @info position(mFile)
     dataType, size, psize = parse_tag(mFile)
 
     name, content = read_data(mFile, dataType, size)
-
-    #Account for possible padding
-    skip_padding!(mFile, size, psize)
 
     return name, content
 end
@@ -115,12 +113,18 @@ function read_data(mFile::MATFile, ::Type{miMATRIX}, size)
     return name, data
 end
 
+# Read variable compressed with zlib
 function read_data(mFile::MATFile, ::Type{miCOMPRESSED}, size)
-    mFile.io = ZlibDecompressorStream(mFile.io)
+    # Switch the stream for the uncompressed and than revert it
+    fileio = mFile.io
+    mFile.io = ZlibDecompressorStream(IOBuffer(read(fileio, size)))
 
     dataType, size, psize = parse_tag(mFile)
+    name, data = read_data(mFile, dataType, size)
 
-    return read_data(mFile, dataType, size)
+    mFile.io = fileio
+
+    return name, data
 end
 
 function parse_flags(mFile::MATFile)
