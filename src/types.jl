@@ -40,6 +40,7 @@ const DataType = Dict(
 get_dtype(idx::Integer) = DataType[Int(idx)]
 
 const ConvertType = Dict(
+    # MATLAB => Julia
     miINT8      => Int8,
     miUINT8     => UInt8,
     miINT16     => Int16,
@@ -53,6 +54,17 @@ const ConvertType = Dict(
     miUTF8      => UInt8,
     miUTF16     => UInt16,
     miUTF32     => UInt32,
+    # Julia => MATLAB
+    Int8        => miINT8,
+    UInt8       => miUINT8,
+    Int16       => miINT16,
+    UInt16      => miUINT16,
+    Int32       => miINT32,
+    UInt32      => miUINT32,
+    Float32     => miSINGLE,
+    Float64     => miDOUBLE,
+    Int64       => miINT64,
+    UInt64      => miUINT64,
 )
 
 # Hierarchy of possible array types
@@ -104,6 +116,7 @@ const ArrayType = Dict(
 get_atype(idx::Integer) = ArrayType[Int(idx)]
 
 const ConvertAType = Dict(
+    # MATLAB => Julia
     mxDOUBLE_CLASS  => Float64,
     mxSINGLE_CLASS  => Float32,
     mxINT8_CLASS    => Int8,
@@ -114,6 +127,17 @@ const ConvertAType = Dict(
     mxUINT32_CLASS  => UInt32,
     mxINT64_CLASS   => Int64,
     mxUINT64_CLASS  => UInt64,
+    # Julia => MATLAB
+    Float64 => mxDOUBLE_CLASS,
+    Float32 => mxSINGLE_CLASS,
+    Int8    => mxINT8_CLASS,
+    UInt8   => mxUINT8_CLASS,
+    Int16   => mxINT16_CLASS,
+    UInt16  => mxUINT16_CLASS,
+    Int32   => mxINT32_CLASS,
+    UInt32  => mxUINT32_CLASS,
+    Int64   => mxINT64_CLASS,
+    UInt64  => mxUINT64_CLASS,
 )
 
 # Main output data type
