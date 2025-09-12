@@ -1,7 +1,11 @@
-function write_mat(f, data)
+function write_mat(f, args...)
     open(f, "w") do file
         write_header!(file)
-        write_data(file, data)
+        
+        # Write variables sequentially
+        for arg in args
+            write_data(file, arg)
+        end
     end
 end
 
@@ -50,16 +54,19 @@ end
 # Fallback error for unsupported types
 write_data(file, name, data) = error("Writing data of type $(typeof(data)) not yet implemented.")
 
-# Scalar types
-function write_data(file, name, data::T) where T <: Number
-    matType = ConvertType[T]
+# Scalar types - transform into 1x1 matrix
+write_data(file, name, data::T) where T <: Number = write_data(file, name, [data;;])
+
+# Numerical matrices
+function write_data(file, name, data::T) where T <: Matrix{<:Number}
+    matType = ConvertType[eltype(T)]
     matVal = get_datatype_id(matType)
 
     println(matType, " ", matVal)
-    arrType = ConvertAType[T]
+    arrType = ConvertAType[eltype(T)]
     arrVal = get_array_id(arrType)
     println("$arrType $arrVal")
-    dims = (1,1)
+    dims = size(data)
 
     write_matrix(file, name, arrVal, matVal, dims, data)
 end
@@ -87,23 +94,25 @@ function write_matrix(file, name, arrVal, matVal, dims, data)
     # Write name subelement
     if length(name) < 5
         asciiVector = Int8.([Char(x) for x in name])
-        append!(asciiVector, zeros(Int8, 4-length(name)))
+        append!(asciiVector, padding(length(name), 4))
         write(file, Int16(1), Int16(length(name)), asciiVector)
     else
         asciiVector = Int8.([Char(x) for x in name])
-        append!(asciiVector, zeros(Int8, rest(length(name))))
+        append!(asciiVector, padding(length(name), 8))
         write(file, Int32(1), Int32(length(name)), asciiVector)
     end
 
     # Write data
     println(matVal, length(data), " ", sizeof(DataType[matVal]))
-    write(file, Int32(matVal), Int32(length(data)*sizeof(DataType[matVal])), data, Int32(0))
-    # ! Hardcoded alignment at the end - needs proper handling
+    write(file, Int32(matVal), Int32(length(data)*sizeof(DataType[matVal])), data)
+    write(file, padding(sizeof(data), 8))
 
+    # Update the size of matrix
     size = position(file) - sizePtr
     seek(file, sizePtr-4)
     write(file, Int32(size))
-
+    # Return to the end of the file
+    seekend(file)
 end
 
-rest(x) = (cld(x, 8) * 8) - x
+padding(data, size) = zeros(Int8, cld(data, size) * size - data)
