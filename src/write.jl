@@ -79,14 +79,16 @@ function get_array_id(T::Type{<:MatArray})
     return findfirst(x -> values(x) == T, pairs(ArrayType))
 end
 
-function write_matrix(file, name, arrVal, matVal, dims, data)
+function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowIds=Int[])
     # Write matrix tag but set size to zero, we'll overwrite this value at the end.
     write(file, Int32(14), Int32(0))
     # Remember where to write back
     sizePtr = position(file)
     
     # Write flags subelement
-    write(file, Int32(6), Int32(8), UInt32(arrVal), UInt32(0))
+    #! Clean up the sprase addition
+    spr = isempty(rowIds) ? UInt32(0) : UInt32(length(data))
+    write(file, Int32(6), Int32(8), UInt32(arrVal), spr)
 
     # Write dimensions subelement
     write(file, Int32(5), Int32(length(dims)*sizeof(Int32)), Int32.(dims)...)
@@ -100,6 +102,18 @@ function write_matrix(file, name, arrVal, matVal, dims, data)
         asciiVector = Int8.([Char(x) for x in name])
         append!(asciiVector, padding(length(name), 8))
         write(file, Int32(1), Int32(length(name)), asciiVector)
+    end
+
+    # Sparse array subelements
+    if !isempty(rowIds)
+        # Write row indices
+        #! Hardcoded matrix type IDs and data sizes - change everywhere
+        write(file, Int32(5), Int32(length(rowIds)*sizeof(Int32)), rowIds)
+        write(file, padding(sizeof(rowIds), 8))
+
+        # Write column indices
+        write(file, Int32(5), Int32(length(colIds)*sizeof(Int32)), colIds)
+        write(file, padding(sizeof(colIds), 8))
     end
 
     # Write data
@@ -116,3 +130,20 @@ function write_matrix(file, name, arrVal, matVal, dims, data)
 end
 
 padding(data, size) = zeros(Int8, cld(data, size) * size - data)
+
+function write_data(file, name, data::AbstractSparseArray)
+    matType = ConvertType[eltype(data)]
+    matVal = get_datatype_id(matType)
+
+    println(matType, " ", matVal)
+    arrType = mxSPARSE_CLASS
+    arrVal = get_array_id(arrType)
+    println("$arrType $arrVal")
+
+    colIds = Int32.(data.colptr .- 1)
+    rowIds = Int32.(data.rowval)
+    nzval = data.nzval
+    dims = (data.m, data.n)
+
+    write_matrix(file, name, arrVal, matVal, dims, nzval, colIds=colIds, rowIds=rowIds)
+end

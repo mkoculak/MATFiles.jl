@@ -1,7 +1,7 @@
 module MATIO
 
 import Dates: DateFormat, format, now
-import SparseArrays: SparseMatrixCSC
+import SparseArrays: AbstractSparseArray, SparseMatrixCSC
 import CodecZlib: ZlibDecompressorStream
 
 include("types.jl")
