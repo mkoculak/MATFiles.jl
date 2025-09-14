@@ -122,23 +122,22 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
     write(file, padding(sizeof(data), 8))
 
     # Update the size of matrix
-    size = position(file) - sizePtr
+    mSize = position(file) - sizePtr
     seek(file, sizePtr-4)
-    write(file, Int32(size))
+    write(file, Int32(mSize))
     # Return to the end of the file
     seekend(file)
 end
 
-padding(data, size) = zeros(Int8, cld(data, size) * size - data)
+padding(data, mSize) = data == 0 ? zeros(Int8, mSize) : zeros(Int8, cld(data, mSize) * mSize - data)
 
+# Writing sparse matrices
 function write_data(file, name, data::AbstractSparseArray)
     matType = ConvertType[eltype(data)]
     matVal = get_datatype_id(matType)
 
-    println(matType, " ", matVal)
     arrType = mxSPARSE_CLASS
     arrVal = get_array_id(arrType)
-    println("$arrType $arrVal")
 
     colIds = Int32.(data.colptr .- 1)
     rowIds = Int32.(data.rowval)
@@ -146,4 +145,45 @@ function write_data(file, name, data::AbstractSparseArray)
     dims = (data.m, data.n)
 
     write_matrix(file, name, arrVal, matVal, dims, nzval, colIds=colIds, rowIds=rowIds)
+end
+
+# Writing eterogenous arrays as cell arrays
+function write_data(file, name, data::AbstractArray)
+    arrType = mxCELL_CLASS
+    arrVal = get_array_id(arrType)
+
+    # Write matrix tag but set size to zero, we'll overwrite this value at the end.
+    write(file, Int32(14), Int32(0))
+    # Remember where to write back
+    sizePtr = position(file)
+
+    # Write flags subelement
+    write(file, Int32(6), Int32(8), UInt32(arrVal), UInt32(0))
+
+    # Write dimensions subelement
+    dims = size(data)
+    dims = length(dims) == 1 ? (dims[1], 1) : dims
+    write(file, Int32(5), Int32(length(dims)*sizeof(Int32)), Int32.(dims)...)
+
+    # Write name subelement
+    if length(name) < 5
+        asciiVector = Int8.([Char(x) for x in name])
+        append!(asciiVector, padding(length(name), 4))
+        write(file, Int16(1), Int16(length(name)), asciiVector)
+    else
+        asciiVector = Int8.([Char(x) for x in name])
+        append!(asciiVector, padding(length(name), 8))
+        write(file, Int32(1), Int32(length(name)), asciiVector)
+    end
+
+    for i in 1:prod(dims)
+        write_data(file, "", data[i])
+    end
+
+    # Update the size of matrix
+    mSize = position(file) - sizePtr
+    seek(file, sizePtr-4)
+    write(file, Int32(mSize))
+    # Return to the end of the file
+    seekend(file)
 end
