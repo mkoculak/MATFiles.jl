@@ -236,7 +236,7 @@ end
 # Read cell arrays
 function read_data(mFile::MATFile, ::Type{mxCELL_CLASS}, c)
     dims = parse_dimensions(mFile)
-    name = parse_name(mFile)
+    cName = parse_name(mFile)
 
     data = Array{Any}(undef, Tuple(dims))
 
@@ -251,30 +251,29 @@ function read_data(mFile::MATFile, ::Type{mxCELL_CLASS}, c)
         data = identity.(data)
     end
 
-    return name, data
+    return cName, data
 end
 
 # Read struct arrays
 function read_data(mFile::MATFile, ::Type{mxSTRUCT_CLASS}, c)
     dims = parse_dimensions(mFile)
-    name = parse_name(mFile)
-
+    sName = parse_name(mFile)
+    
     # Get the number of names/fields in the struct
     nameLen = parse_dimensions(mFile)
-    sNames = parse_names(mFile, nameLen)
+    fNames = parse_names(mFile, nameLen)
 
     structs = NamedTuple[]
     # Account for a matrix of structs
     for j in 1:prod(dims)
-        sData = []
-        for i in sNames
+        fData = []
+        for i in fNames
             name, data = read_data(mFile)
-            push!(sData, data)
+            push!(fData, data)
         end
-        push!(structs, NamedTuple(zip(sNames, sData)))
+        push!(structs, NamedTuple(zip(fNames, fData)))
     end
-
-    return name, structs
+    return sName, structs
 end
 
 function parse_names(mFile::MATFile, nameLen)

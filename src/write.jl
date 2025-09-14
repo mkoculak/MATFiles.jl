@@ -187,3 +187,61 @@ function write_data(file, name, data::AbstractArray)
     # Return to the end of the file
     seekend(file)
 end
+
+# Writing structs
+function write_data(file, name, data::NamedTuple)
+    arrType = mxSTRUCT_CLASS
+    arrVal = get_array_id(arrType)
+
+    # Write matrix tag but set size to zero, we'll overwrite this value at the end.
+    write(file, Int32(14), Int32(0))
+    # Remember where to write back
+    sizePtr = position(file)
+
+    @info arrVal
+    # Write flags subelement
+    write(file, Int32(6), Int32(8), UInt32(arrVal), UInt32(0))
+
+    # Write dimensions subelement
+    dims = (1,1)
+    write(file, Int32(5), Int32(length(dims)*sizeof(Int32)), Int32.(dims)...)
+
+    # Write name subelement
+    if length(name) < 5
+        asciiVector = Int8.([Char(x) for x in name])
+        append!(asciiVector, padding(length(name), 4))
+        write(file, Int16(1), Int16(length(name)), asciiVector)
+    else
+        asciiVector = Int8.([Char(x) for x in name])
+        append!(asciiVector, padding(length(name), 8))
+        write(file, Int32(1), Int32(length(name)), asciiVector)
+    end
+
+    # Write names of the fields
+    fNames = String.(propertynames(data))
+    nameNum = length.(fNames)
+    nameSize = cld(maximum(nameNum), 8) * 8 # The might be a limit of 32 bytes per name
+
+    # Field name lengths
+    write(file, Int16(5), Int16(4), UInt32(nameSize))
+
+    # Field names
+    write(file, Int32(1), Int32(nameSize*length(fNames)))
+    for fName in fNames
+        asciiVector = Int8.([Char(x) for x in fName])
+        append!(asciiVector, padding(length(fName), nameSize))
+        write(file, asciiVector)
+    end
+
+    # Fields
+    for field in propertynames(data)
+        write_data(file, "", getproperty(data, field))
+    end
+
+    # Update the size of matrix
+    mSize = position(file) - sizePtr
+    seek(file, sizePtr-4)
+    write(file, Int32(mSize))
+    # Return to the end of the file
+    seekend(file)
+end
