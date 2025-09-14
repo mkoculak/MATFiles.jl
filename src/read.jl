@@ -172,7 +172,8 @@ function read_data(mFile::MATFile, T::Type{<:NumArray}, c)
 
     # Make sure declared size matches data type x dimensions of an array
     if size == 0
-        tmp = Array{dataType}(undef, 0,0)
+        emptyType = T == mxCHAR_CLASS ? Char : ConvertAType[T]
+        tmp = Array{emptyType}(undef, 0,0)
     elseif sizeof(ConvertType[dataType]) * prod(dims) != size
         println(position(mFile))
         error("Requested array of type $(ConvertType[dataType]) \

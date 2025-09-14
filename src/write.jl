@@ -54,8 +54,14 @@ end
 # Fallback error for unsupported types
 write_data(file, name, data) = error("Writing data of type $(typeof(data)) not yet implemented.")
 
+# Variables read by MATIO
+write_data(file, name, data::MATFile) = write_data(file, name, data.data)
+
 # Scalar types - transform into 1x1 matrix
-write_data(file, name, data::T) where T <: Number = write_data(file, name, [data;;])
+write_data(file, name, data::T) where T <: Union{Number, AbstractChar} = write_data(file, name, [data;;])
+
+# String as a Char matrix
+write_data(file, name, data::AbstractString) = write_data(file, name, reshape(collect(data),1,length(data)))
 
 # Numerical matrices
 function write_data(file, name, data::T) where T <: Matrix{<:Number}
@@ -77,6 +83,18 @@ end
 
 function get_array_id(T::Type{<:MatArray})
     return findfirst(x -> values(x) == T, pairs(ArrayType))
+end
+
+function write_data(file, name, data::Matrix{<:AbstractChar})
+    matType = miUINT16
+    matVal = get_datatype_id(matType)
+
+    arrType = mxCHAR_CLASS
+    arrVal = get_array_id(arrType)
+
+    dims = size(data)
+    @info dims data
+    write_matrix(file, name, arrVal, matVal, dims, UInt16.(data))
 end
 
 function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowIds=Int[])
