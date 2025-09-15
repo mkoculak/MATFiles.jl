@@ -36,7 +36,7 @@ function get_os()
 end
 
 function get_date()
-    dFormat =DateFormat("e u dd HH:MM:SS Y")
+    dFormat = DateFormat("e u dd HH:MM:SS Y")
 
     return format(now(), dFormat)
 end
@@ -65,35 +65,25 @@ write_data(file, name, data::AbstractString) = write_data(file, name, reshape(co
 
 # Numerical matrices
 function write_data(file, name, data::T) where T <: Matrix{<:Number}
-    matType = ConvertType[eltype(T)]
-    matVal = get_datatype_id(matType)
-
-    println(matType, " ", matVal)
-    arrType = ConvertAType[eltype(T)]
-    arrVal = get_array_id(arrType)
-    println("$arrType $arrVal")
+    matVal = get_datatype_id(eltype(T))
+    arrVal = get_array_id(eltype(T))
     dims = size(data)
 
     write_matrix(file, name, arrVal, matVal, dims, data)
 end
 
-function get_datatype_id(T::Type{<:MatType})
-    return findfirst(x -> values(x) == T, pairs(DataType))
-end
+get_datatype_id(T::Type) = get_datatype_id(ConvertType[T])
+get_datatype_id(T::Type{<:MatType}) = findfirst(x -> values(x) == T, pairs(DataType))
 
-function get_array_id(T::Type{<:MatArray})
-    return findfirst(x -> values(x) == T, pairs(ArrayType))
-end
+get_array_id(T::Type) = get_array_id(ConvertAType[T])
+get_array_id(T::Type{<:MatArray}) = findfirst(x -> values(x) == T, pairs(ArrayType))
 
 function write_data(file, name, data::Matrix{<:AbstractChar})
-    matType = miUINT16
-    matVal = get_datatype_id(matType)
-
-    arrType = mxCHAR_CLASS
-    arrVal = get_array_id(arrType)
+    matVal = get_datatype_id(miUINT16)
+    arrVal = get_array_id(mxCHAR_CLASS)
 
     dims = size(data)
-    @info dims data
+
     write_matrix(file, name, arrVal, matVal, dims, UInt16.(data))
 end
 
@@ -104,23 +94,14 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
     sizePtr = position(file)
     
     # Write flags subelement
-    #! Clean up the sprase addition
-    spr = isempty(rowIds) ? UInt32(0) : UInt32(length(data))
-    write(file, Int32(6), Int32(8), UInt32(arrVal), spr)
+    #! Add flag handling (now all set to false)
+    isempty(rowIds) ? write_flags(file, arrVal) : write_flags(file, arrVal, nzmax=UInt32(length(data)))
 
     # Write dimensions subelement
-    write(file, Int32(5), Int32(length(dims)*sizeof(Int32)), Int32.(dims)...)
+    write_dimensions(file, Int32, dims)
 
     # Write name subelement
-    if length(name) < 5
-        asciiVector = Int8.([Char(x) for x in name])
-        append!(asciiVector, padding(length(name), 4))
-        write(file, Int16(1), Int16(length(name)), asciiVector)
-    else
-        asciiVector = Int8.([Char(x) for x in name])
-        append!(asciiVector, padding(length(name), 8))
-        write(file, Int32(1), Int32(length(name)), asciiVector)
-    end
+    write_name(file, name)
 
     # Sparse array subelements
     if !isempty(rowIds)
@@ -147,15 +128,41 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
     seekend(file)
 end
 
-padding(data, mSize) = data == 0 ? zeros(Int8, mSize) : zeros(Int8, cld(data, mSize) * mSize - data)
+function write_flags(file, arrID; c=0, g=0, l=0, nzmax=Int32(0))
+    flags = parse(UInt8, "0000$(c)$(g)$(l)0", base=2)
+    full_info = reinterpret(UInt32, (UInt8(arrID), flags, UInt16(0)))
+    write(file, Int32(6), Int32(8), full_info, nzmax)
+end
+
+function write_dimensions(file, dataType, dims)
+    id = get_datatype_id(dataType)
+    write(file, Int32(id), Int32(length(dims)*sizeof(dataType)), dataType.(dims)...)
+end
+
+function write_name(file, name)
+    if length(name) < 5
+        asciiVector = Int8.([Char(x) for x in name])
+        append!(asciiVector, padding(length(name), 4))
+        write(file, Int16(1), Int16(length(name)), asciiVector)
+    else
+        asciiVector = Int8.([Char(x) for x in name])
+        append!(asciiVector, padding(length(name), 8))
+        write(file, Int32(1), Int32(length(name)), asciiVector)
+    end
+end
+
+function padding(data, mSize)
+    if data == 0
+        mSize == 4 ? zeros(Int8, mSize) : zeros(Int8, 0)
+    else
+        zeros(Int8, cld(data, mSize) * mSize - data)
+    end
+end
 
 # Writing sparse matrices
 function write_data(file, name, data::AbstractSparseArray)
-    matType = ConvertType[eltype(data)]
-    matVal = get_datatype_id(matType)
-
-    arrType = mxSPARSE_CLASS
-    arrVal = get_array_id(arrType)
+    matVal = get_datatype_id(eltype(data))
+    arrVal = get_array_id(mxSPARSE_CLASS)
 
     colIds = Int32.(data.colptr .- 1)
     rowIds = Int32.(data.rowval)
@@ -167,8 +174,7 @@ end
 
 # Writing eterogenous arrays as cell arrays
 function write_data(file, name, data::AbstractArray)
-    arrType = mxCELL_CLASS
-    arrVal = get_array_id(arrType)
+    arrVal = get_array_id(mxCELL_CLASS)
 
     # Write matrix tag but set size to zero, we'll overwrite this value at the end.
     write(file, Int32(14), Int32(0))
@@ -176,23 +182,14 @@ function write_data(file, name, data::AbstractArray)
     sizePtr = position(file)
 
     # Write flags subelement
-    write(file, Int32(6), Int32(8), UInt32(arrVal), UInt32(0))
+    write_flags(file, arrVal)
 
     # Write dimensions subelement
-    dims = size(data)
-    dims = length(dims) == 1 ? (dims[1], 1) : dims
-    write(file, Int32(5), Int32(length(dims)*sizeof(Int32)), Int32.(dims)...)
+    dims = length(size(data)) == 1 ? (length(data), 1) : size(data)
+    write_dimensions(file, Int32, dims)
 
     # Write name subelement
-    if length(name) < 5
-        asciiVector = Int8.([Char(x) for x in name])
-        append!(asciiVector, padding(length(name), 4))
-        write(file, Int16(1), Int16(length(name)), asciiVector)
-    else
-        asciiVector = Int8.([Char(x) for x in name])
-        append!(asciiVector, padding(length(name), 8))
-        write(file, Int32(1), Int32(length(name)), asciiVector)
-    end
+    write_name(file, name)
 
     for i in 1:prod(dims)
         write_data(file, "", data[i])
@@ -207,55 +204,61 @@ function write_data(file, name, data::AbstractArray)
 end
 
 # Writing structs
-function write_data(file, name, data::NamedTuple)
-    arrType = mxSTRUCT_CLASS
-    arrVal = get_array_id(arrType)
+write_data(file, name, data::NamedTuple) = write_data(file, name, [data;])
+
+function write_data(file, name, data::Vector{NamedTuple})
+    arrVal = get_array_id(mxSTRUCT_CLASS)
 
     # Write matrix tag but set size to zero, we'll overwrite this value at the end.
     write(file, Int32(14), Int32(0))
     # Remember where to write back
     sizePtr = position(file)
 
-    @info arrVal
     # Write flags subelement
-    write(file, Int32(6), Int32(8), UInt32(arrVal), UInt32(0))
+    write_flags(file, arrVal)
 
     # Write dimensions subelement
-    dims = (1,1)
-    write(file, Int32(5), Int32(length(dims)*sizeof(Int32)), Int32.(dims)...)
+    write_dimensions(file, Int32, (1,length(data)))
 
     # Write name subelement
-    if length(name) < 5
-        asciiVector = Int8.([Char(x) for x in name])
-        append!(asciiVector, padding(length(name), 4))
-        write(file, Int16(1), Int16(length(name)), asciiVector)
-    else
-        asciiVector = Int8.([Char(x) for x in name])
-        append!(asciiVector, padding(length(name), 8))
-        write(file, Int32(1), Int32(length(name)), asciiVector)
-    end
+    write_name(file, name)
 
     # Write names of the fields
-    fNames = String.(propertynames(data))
+    fNames = String.(propertynames(data[1]))
     nameNum = length.(fNames)
-    nameSize = cld(maximum(nameNum), 8) * 8 # The might be a limit of 32 bytes per name
+    maxNameSize = maximum(nameNum) + 1 # There might be a limit of 32 bytes per name
 
     # Field name lengths
-    write(file, Int16(5), Int16(4), UInt32(nameSize))
+    write(file, Int16(5), Int16(4), UInt32(maxNameSize))
 
     # Field names
-    write(file, Int32(1), Int32(nameSize*length(fNames)))
+    fullSize = maxNameSize*length(fNames)
+    write(file, Int32(1), Int32(fullSize))
     for fName in fNames
         asciiVector = Int8.([Char(x) for x in fName])
-        append!(asciiVector, padding(length(fName), nameSize))
+        append!(asciiVector, padding(length(fName), maxNameSize))
         write(file, asciiVector)
     end
+    # Pad this whole section
+    write(file, padding(fullSize, 8))
 
     # Fields
-    for field in propertynames(data)
-        write_data(file, "", getproperty(data, field))
+    # First one is written in full
+    for field in propertynames(data[1])
+        write_data(file, "", getproperty(data[1], field))
     end
 
+    #Others can be shortened if they contain numerical matrices
+    for datum in data[2:end]
+        for field in propertynames(datum)
+            f = getproperty(datum, field)
+            if isempty(f) && eltype(f) <: Number
+                write_empty(file)
+            else
+                write_data(file, "", f)
+            end
+        end
+    end
     # Update the size of matrix
     mSize = position(file) - sizePtr
     seek(file, sizePtr-4)
@@ -263,3 +266,5 @@ function write_data(file, name, data::NamedTuple)
     # Return to the end of the file
     seekend(file)
 end
+
+write_empty(file) = write(file, UInt32(14), UInt32(0))
