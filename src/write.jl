@@ -73,9 +73,11 @@ function write_data(file, name, data::T) where T <: Matrix{<:Number}
 end
 
 get_datatype_id(T::Type) = get_datatype_id(ConvertType[T])
+get_datatype_id(T::Type{<:Complex}) = get_datatype_id(ConvertType[real(T)])
 get_datatype_id(T::Type{<:MatType}) = findfirst(x -> values(x) == T, pairs(DataType))
 
 get_array_id(T::Type) = get_array_id(ConvertAType[T])
+get_array_id(T::Type{<:Complex}) = get_array_id(ConvertAType[real(T)])
 get_array_id(T::Type{<:MatArray}) = findfirst(x -> values(x) == T, pairs(ArrayType))
 
 function write_data(file, name, data::Matrix{<:AbstractChar})
@@ -93,9 +95,13 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
     # Remember where to write back
     sizePtr = position(file)
     
+    #Identify data of complex type
+    cplx = eltype(data) <: Complex
     # Write flags subelement
     #! Add flag handling (now all set to false)
-    isempty(rowIds) ? write_flags(file, arrVal) : write_flags(file, arrVal, nzmax=UInt32(length(data)))
+    # Set the complex flag
+    c = cplx ? 1 : 0
+    isempty(rowIds) ? write_flags(file, arrVal; c=c) : write_flags(file, arrVal; c=c, nzmax=UInt32(length(data)))
 
     # Write dimensions subelement
     write_dimensions(file, Int32, dims)
@@ -115,9 +121,21 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
         write(file, padding(sizeof(colIds), 8))
     end
 
+    subSize = length(data)*sizeof(DataType[matVal])
+
     # Write data
-    write(file, Int32(matVal), Int32(length(data)*sizeof(DataType[matVal])), data)
-    write(file, padding(sizeof(data), 8))
+    if cplx
+        # Write real part
+        write(file, Int32(matVal), Int32(subSize), real.(data))
+        write(file, padding(subSize, 8))
+        # Write imaginary part
+        write(file, Int32(matVal), Int32(subSize), imag.(data))
+        write(file, padding(subSize, 8))
+    else
+        write(file, Int32(matVal), Int32(subSize), data)
+        write(file, padding(subSize, 8))
+    end
+
 
     # Update the size of matrix
     mSize = position(file) - sizePtr
@@ -174,7 +192,7 @@ end
 # Writing eterogenous arrays as cell arrays
 function write_data(file, name, data::AbstractArray)
     arrVal = get_array_id(mxCELL_CLASS)
-    @info "Yes, here"
+
     # Write matrix tag but set size to zero, we'll overwrite this value at the end.
     write(file, Int32(14), Int32(0))
     # Remember where to write back

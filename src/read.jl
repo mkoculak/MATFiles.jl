@@ -55,6 +55,7 @@ function read_data!(mFile::MATFile, fsize::Int)
     contents = Any[]
 
     while position(mFile) < fsize
+        @info position(mFile) fsize
         name, content = read_data(mFile)
         push!(names, Symbol(name))
         push!(contents, content)
@@ -197,7 +198,10 @@ function read_data(mFile::MATFile, T::Type{<:NumArray}, c)
 
     # Add the imaginary part if matrix contains complex numbers
     if c == '1'
-        data = Complex.(data, read_data(mFile, T, 0))
+        dataType, size, psize = parse_tag(mFile)
+        data = Complex.(data, read(mFile, dataType, dims))
+        #Account for possible padding
+        skip_padding!(mFile, size, psize)
     end
 
     return name, data
@@ -224,6 +228,7 @@ function read_data(mFile::MATFile, ::Type{mxSPARSE_CLASS}, c)
 
     # Add the imaginary part if matrix contains complex numbers
     if c == '1'
+        dataType, size, psize = parse_tag(mFile)
         data = Complex.(data, read(mFile, dataType, N))
 
         #Account for possible padding as both real and imaginary part should match is size
