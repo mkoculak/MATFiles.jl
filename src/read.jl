@@ -274,7 +274,8 @@ function read_data(mFile::MATFile, ::Type{mxSTRUCT_CLASS}, c)
         end
         push!(structs, NamedTuple(zip(fNames, fData)))
     end
-    return sName, structs
+    # Using identity function to infer the common eltype of vector elements
+    return sName, identity.(structs)
 end
 
 function parse_names(mFile::MATFile, nameLen)

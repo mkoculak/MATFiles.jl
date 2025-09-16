@@ -116,7 +116,6 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
     end
 
     # Write data
-    println(matVal, length(data), " ", sizeof(DataType[matVal]))
     write(file, Int32(matVal), Int32(length(data)*sizeof(DataType[matVal])), data)
     write(file, padding(sizeof(data), 8))
 
@@ -175,7 +174,7 @@ end
 # Writing eterogenous arrays as cell arrays
 function write_data(file, name, data::AbstractArray)
     arrVal = get_array_id(mxCELL_CLASS)
-
+    @info "Yes, here"
     # Write matrix tag but set size to zero, we'll overwrite this value at the end.
     write(file, Int32(14), Int32(0))
     # Remember where to write back
@@ -206,7 +205,15 @@ end
 # Writing structs
 write_data(file, name, data::NamedTuple) = write_data(file, name, [data;])
 
-function write_data(file, name, data::Vector{NamedTuple})
+function write_data(file, name, data::Vector{<:NamedTuple})
+    # Basic check if NamedTuples are of the same type (have the same set of fields)
+    if !isconcretetype(eltype(data))
+        @warn "Variable $name includes NamedTuples with different fields, saving as a cell array instead."
+        
+        write_data(file, name, [data;;])
+        return nothing
+    end
+
     arrVal = get_array_id(mxSTRUCT_CLASS)
 
     # Write matrix tag but set size to zero, we'll overwrite this value at the end.
