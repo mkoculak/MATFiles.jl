@@ -19,7 +19,7 @@ struct miUTF8       <: MatNumber end
 struct miUTF16      <: MatNumber end
 struct miUTF32      <: MatNumber end
 
-const DataType = Dict(
+const MatDataType = Dict(
     1  => miINT8,
     2  => miUINT8,
     3  => miINT16,
@@ -37,7 +37,7 @@ const DataType = Dict(
     18 => miUTF32,
 )
 
-get_dtype(idx::Integer) = DataType[Int(idx)]
+get_dtype(idx::Integer) = MatDataType[Int(idx)]
 
 const ConvertType = Dict(
     # MATLAB => Julia
@@ -138,6 +138,16 @@ const ConvertAType = Dict(
     UInt32  => mxUINT32_CLASS,
     Int64   => mxINT64_CLASS,
     UInt64  => mxUINT64_CLASS,
+)
+
+const SmallerType = Dict(
+    miINT64 => miINT32,
+    miINT32 => miINT16,
+    miINT16 => miINT8,
+    miUINT64 => miUINT32,
+    miUINT32 => miUINT16,
+    miUINT16 => miUINT8,
+    miDOUBLE => miSINGLE,
 )
 
 # Main output data type

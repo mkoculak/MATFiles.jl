@@ -11,4 +11,9 @@ export read_mat
 include("write.jl")
 export write_mat
 
-end
+const preferences = Dict(
+    "compress" => false,
+    "packing" => false,
+)
+
+end #Module

@@ -1,14 +1,14 @@
-function write_mat(f, args...; compress=false)
+function write_mat(f, args...)
     open(f, "w") do file
         write_header!(file)
         
-        ffile = compress ? IOBuffer() : file
+        ffile = preferences["compress"] ? IOBuffer() : file
         # Write variables sequentially
         for arg in args
             write_data(ffile, arg)
         end
 
-        if compress
+        if preferences["compress"]
             write(file, Int32(15), Int32(0))
             sizePtr = position(file)
 
@@ -117,6 +117,7 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
     #! Add flag handling (now all set to false)
     # Set the complex flag
     c = cplx ? 1 : 0
+    arrVal = preferences["packing"] ? 6 : arrVal
     isempty(rowIds) ? write_flags(file, arrVal; c=c) : write_flags(file, arrVal; c=c, nzmax=UInt32(length(data)))
 
     # Write dimensions subelement
@@ -148,6 +149,16 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
         write(file, Int32(matVal), Int32(subSize), imag.(data))
         write(file, padding(subSize, 8))
     else
+        if preferences["packing"]
+            newMatType = find_smallest_type(get_dtype(matVal), extrema(data))
+            if get_dtype(matVal) != newMatType
+                matVal = get_datatype_id(newMatType)
+                data = ConvertType[newMatType].(data)
+
+                subSize = length(data)*sizeof(DataType[matVal])
+            end
+        end
+
         write(file, Int32(matVal), Int32(subSize), data)
         write(file, padding(subSize, 8))
     end
@@ -189,6 +200,17 @@ function padding(data, mSize)
         mSize == 4 ? zeros(Int8, mSize) : zeros(Int8, 0)
     else
         zeros(Int8, cld(data, mSize) * mSize - data)
+    end
+end
+
+function find_smallest_type(T::Type{<:MatNumber}, dataRange)
+    try
+        newT = SmallerType[T]
+        @info "Testing $newT"
+        all(typemin(ConvertType[newT]) .< dataRange .< typemax(ConvertType[newT])) && find_smallest_type(newT, dataRange)
+    catch
+        @info "found $T"
+        return T
     end
 end
 
