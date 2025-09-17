@@ -65,6 +65,7 @@ const ConvertType = Dict(
     Float64     => miDOUBLE,
     Int64       => miINT64,
     UInt64      => miUINT64,
+    Bool        => miUINT8,
 )
 
 # Hierarchy of possible array types
@@ -138,6 +139,7 @@ const ConvertAType = Dict(
     UInt32  => mxUINT32_CLASS,
     Int64   => mxINT64_CLASS,
     UInt64  => mxUINT64_CLASS,
+    Bool    => mxUINT8_CLASS,
 )
 
 const SmallerType = Dict(

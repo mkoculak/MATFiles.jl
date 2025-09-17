@@ -90,12 +90,13 @@ end
 
 get_datatype_id(T::Type) = get_datatype_id(ConvertType[T])
 get_datatype_id(T::Type{<:Complex}) = get_datatype_id(ConvertType[real(T)])
-get_datatype_id(T::Type{<:MatType}) = findfirst(x -> values(x) == T, pairs(DataType))
+get_datatype_id(T::Type{<:MatType}) = findfirst(x -> values(x) == T, pairs(MatDataType))
 
 get_array_id(T::Type) = get_array_id(ConvertAType[T])
 get_array_id(T::Type{<:Complex}) = get_array_id(ConvertAType[real(T)])
 get_array_id(T::Type{<:MatArray}) = findfirst(x -> values(x) == T, pairs(ArrayType))
 
+# Character matrices
 function write_data(file, name, data::Matrix{<:AbstractChar})
     matVal = get_datatype_id(miUINT16)
     arrVal = get_array_id(mxCHAR_CLASS)
@@ -111,14 +112,17 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
     # Remember where to write back
     sizePtr = position(file)
     
-    #Identify data of complex type
+    #Identify data of complex type and set the flag
     cplx = eltype(data) <: Complex
-    # Write flags subelement
-    #! Add flag handling (now all set to false)
-    # Set the complex flag
     c = cplx ? 1 : 0
+
+    # Identify boolean data and set the flag
+    l = eltype(data) == Bool ? 1 : 0
+
+    # Choosing packing forces the matrix to be of mxDOUBLE type otherwise Matlab will not properly convert
     arrVal = preferences["packing"] ? 6 : arrVal
-    isempty(rowIds) ? write_flags(file, arrVal; c=c) : write_flags(file, arrVal; c=c, nzmax=UInt32(length(data)))
+    # Write flags subelement
+    isempty(rowIds) ? write_flags(file, arrVal; c=c, l=l) : write_flags(file, arrVal; c=c, l=l, nzmax=UInt32(length(data)))
 
     # Write dimensions subelement
     write_dimensions(file, Int32, dims)
@@ -138,7 +142,7 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
         write(file, padding(sizeof(colIds), 8))
     end
 
-    subSize = length(data)*sizeof(DataType[matVal])
+    subSize = length(data)*sizeof(MatDataType[matVal])
 
     # Write data
     if cplx
@@ -155,7 +159,7 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
                 matVal = get_datatype_id(newMatType)
                 data = ConvertType[newMatType].(data)
 
-                subSize = length(data)*sizeof(DataType[matVal])
+                subSize = length(data)*sizeof(MatDataType[matVal])
             end
         end
 
@@ -206,10 +210,8 @@ end
 function find_smallest_type(T::Type{<:MatNumber}, dataRange)
     try
         newT = SmallerType[T]
-        @info "Testing $newT"
         all(typemin(ConvertType[newT]) .< dataRange .< typemax(ConvertType[newT])) && find_smallest_type(newT, dataRange)
     catch
-        @info "found $T"
         return T
     end
 end

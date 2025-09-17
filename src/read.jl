@@ -112,6 +112,11 @@ function read_data(mFile::MATFile, ::Type{miMATRIX}, size)
 
     name, data = read_data(mFile, arrayType, c)
 
+    # Convert to Bool if proper flag is set
+    if l == '1'
+        data = Bool.(data)
+    end
+
     return name, data
 end
 
