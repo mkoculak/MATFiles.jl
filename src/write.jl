@@ -1,10 +1,26 @@
-function write_mat(f, args...)
+function write_mat(f, args...; compress=false)
     open(f, "w") do file
         write_header!(file)
         
+        ffile = compress ? IOBuffer() : file
         # Write variables sequentially
         for arg in args
-            write_data(file, arg)
+            write_data(ffile, arg)
+        end
+
+        if compress
+            write(file, Int32(15), Int32(0))
+            sizePtr = position(file)
+
+            cmprs = ZlibCompressorStream(file)
+            write(cmprs, take!(ffile), TOKEN_END)
+
+            # Update the size of matrix
+            mSize = position(file) - sizePtr
+            seek(file, sizePtr-4)
+            write(file, Int32(mSize))
+            # Return to the end of the file
+            seekend(file)
         end
     end
 end
