@@ -2,7 +2,7 @@ function write_mat(f, args...)
     open(f, "w") do file
         write_header!(file)
         
-        ffile = preferences["compress"] ? IOBuffer() : file
+        ffile = preferences["compress"] ? IOBuffer(sizehint=500*1024*1024) : file
         # Write variables sequentially
         for arg in args
             write_data(ffile, arg)
@@ -80,7 +80,7 @@ write_data(file, name, data::T) where T <: Union{Number, AbstractChar} = write_d
 write_data(file, name, data::AbstractString) = write_data(file, name, reshape(collect(data),1,length(data)))
 
 # Numerical matrices
-function write_data(file, name, data::T) where T <: Matrix{<:Number}
+function write_data(file, name, data::T) where T <: AbstractArray{<:Union{<:Number, Bool}}
     matVal = get_datatype_id(eltype(T))
     arrVal = get_array_id(eltype(T))
     dims = size(data)
@@ -88,12 +88,12 @@ function write_data(file, name, data::T) where T <: Matrix{<:Number}
     write_matrix(file, name, arrVal, matVal, dims, data)
 end
 
-get_datatype_id(T::Type) = get_datatype_id(ConvertType[T])
-get_datatype_id(T::Type{<:Complex}) = get_datatype_id(ConvertType[real(T)])
+get_datatype_id(T::Type) = get_datatype_id(ConvertTypeJM[T])
+get_datatype_id(T::Type{<:Complex}) = get_datatype_id(ConvertTypeJM[real(T)])
 get_datatype_id(T::Type{<:MatType}) = findfirst(x -> values(x) == T, pairs(MatDataType))
 
-get_array_id(T::Type) = get_array_id(ConvertAType[T])
-get_array_id(T::Type{<:Complex}) = get_array_id(ConvertAType[real(T)])
+get_array_id(T::Type) = get_array_id(ConvertATypeJM[T])
+get_array_id(T::Type{<:Complex}) = get_array_id(ConvertATypeJM[real(T)])
 get_array_id(T::Type{<:MatArray}) = findfirst(x -> values(x) == T, pairs(ArrayType))
 
 # Character matrices
@@ -117,7 +117,13 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
     c = cplx ? 1 : 0
 
     # Identify boolean data and set the flag
-    l = eltype(data) == Bool ? 1 : 0
+    if eltype(data) == Bool
+        l = 1
+        # Change tyle of data from Bool to Int8
+        data = UInt8.(data)
+    else
+        l = 0
+    end
 
     # Choosing packing forces the matrix to be of mxDOUBLE type otherwise Matlab will not properly convert
     arrVal = preferences["packing"] ? 6 : arrVal
@@ -153,11 +159,11 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
         write(file, Int32(matVal), Int32(subSize), imag.(data))
         write(file, padding(subSize, 8))
     else
-        if preferences["packing"]
+        if preferences["packing"] && !isempty(data)
             newMatType = find_smallest_type(get_dtype(matVal), extrema(data))
             if get_dtype(matVal) != newMatType
                 matVal = get_datatype_id(newMatType)
-                data = ConvertType[newMatType].(data)
+                data = ConvertTypeMJ[newMatType].(data)
 
                 subSize = length(data)*sizeof(MatDataType[matVal])
             end
@@ -177,21 +183,28 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
 end
 
 function write_flags(file, arrID; c=0, g=0, l=0, nzmax=Int32(0))
-    flags = parse(UInt8, "0000$(c)$(g)$(l)0", base=2)
+    # flags = parse(UInt8, "0000$(c)$(g)$(l)0", base=2)
+    flags = UInt8(8c) | UInt8(4g) | UInt8(2l)
     full_info = reinterpret(UInt32, (UInt8(arrID), flags, UInt16(0)))
-    write(file, Int32(6), Int32(8), full_info, nzmax)
+    write(file, reinterpret(Int128, (Int32(6), Int32(8), full_info, nzmax)))
 end
 
 function write_dimensions(file, dataType, dims)
     id = get_datatype_id(dataType)
-    write(file, Int32(id), Int32(length(dims)*sizeof(dataType)), dataType.(dims)...)
+    dimsSpan = Int32(length(dims)*sizeof(dataType))
+    # Add padding in case the number of dims is odd
+    write(file, Int32(id), dimsSpan, dataType.(dims)..., padding(dimsSpan,8))
 end
 
 function write_name(file, name)
     if length(name) < 5
-        asciiVector = Int8.([Char(x) for x in name])
-        append!(asciiVector, padding(length(name), 4))
-        write(file, Int16(1), Int16(length(name)), asciiVector)
+        # asciiVector = Int8.([Char(x) for x in name])
+        # append!(asciiVector, padding(length(name), 4))
+        asciiVector = UInt32(0)
+        for (i,n) in enumerate(name)
+            asciiVector |= UInt32(n) << (8 * (4-i))
+        end
+        write(file, reinterpret(Int64, (Int16(1), Int16(length(name)), asciiVector)))
     else
         asciiVector = Int8.([Char(x) for x in name])
         append!(asciiVector, padding(length(name), 8))
@@ -210,7 +223,7 @@ end
 function find_smallest_type(T::Type{<:MatNumber}, dataRange)
     try
         newT = SmallerType[T]
-        all(typemin(ConvertType[newT]) .< dataRange .< typemax(ConvertType[newT])) && find_smallest_type(newT, dataRange)
+        all(typemin(ConvertTypeMJ[newT]) .< dataRange .< typemax(ConvertTypeMJ[newT])) && find_smallest_type(newT, dataRange)
     catch
         return T
     end

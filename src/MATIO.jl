@@ -1,8 +1,10 @@
 module MATIO
 
-import Dates: DateFormat, format, now
-import SparseArrays: AbstractSparseArray, SparseMatrixCSC
-import CodecZlib: ZlibDecompressorStream, ZlibCompressorStream, TranscodingStreams.TOKEN_END
+using CodecZlib: ZlibDecompressorStream, ZlibCompressorStream, TranscodingStreams.TOKEN_END
+using Dates: DateFormat, format, now
+using SparseArrays: AbstractSparseArray, SparseMatrixCSC
+
+const version = pkgversion(MATIO)
 
 include("types.jl")
 include("read.jl")

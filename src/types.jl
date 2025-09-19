@@ -39,7 +39,7 @@ const MatDataType = Dict(
 
 get_dtype(idx::Integer) = MatDataType[Int(idx)]
 
-const ConvertType = Dict(
+const ConvertTypeMJ = Dict(
     # MATLAB => Julia
     miINT8      => Int8,
     miUINT8     => UInt8,
@@ -54,6 +54,9 @@ const ConvertType = Dict(
     miUTF8      => UInt8,
     miUTF16     => UInt16,
     miUTF32     => UInt32,
+)
+
+const ConvertTypeJM = Dict(
     # Julia => MATLAB
     Int8        => miINT8,
     UInt8       => miUINT8,
@@ -116,7 +119,7 @@ const ArrayType = Dict(
 
 get_atype(idx::Integer) = ArrayType[Int(idx)]
 
-const ConvertAType = Dict(
+const ConvertATypeMJ = Dict(
     # MATLAB => Julia
     mxDOUBLE_CLASS  => Float64,
     mxSINGLE_CLASS  => Float32,
@@ -128,6 +131,8 @@ const ConvertAType = Dict(
     mxUINT32_CLASS  => UInt32,
     mxINT64_CLASS   => Int64,
     mxUINT64_CLASS  => UInt64,
+)
+const ConvertATypeJM = Dict(
     # Julia => MATLAB
     Float64 => mxDOUBLE_CLASS,
     Float32 => mxSINGLE_CLASS,
@@ -164,7 +169,7 @@ end
 # Convenience functions to read Matlab data types
 function Base.read(mFile::MATFile, type::Type{<:MatNumber})
     # Convert Matlab type to Julia
-    jType = ConvertType[type]
+    jType = ConvertTypeMJ[type]
 
     # Handle endianess
     sysEnd = ENDIAN_BOM == 0x04030201 ? "IM" : "MI"
@@ -180,7 +185,7 @@ end
 
 function Base.read(mFile::MATFile, type::Type{<:MatNumber}, dims)
     # Convert Matlab type to Julia
-    jType = ConvertType[type]
+    jType = ConvertTypeMJ[type]
     data = zeros(jType, Tuple(dims))
     read!(mFile.io, data)
 
@@ -197,7 +202,7 @@ end
 Base.read(mFile::MATFile, T::Type) = read(mFile.io, T)
 Base.read(mFile::MATFile, N::Number) = read(mFile.io, N)
 
-Base.sizeof(T::Type{<:MatNumber}) = sizeof(ConvertType[T])
+Base.sizeof(T::Type{<:MatNumber}) = sizeof(ConvertTypeMJ[T])
 
 Base.peek(mFile::MATFile, T::Type) = peek(mFile.io, T)
 Base.seek(mFile::MATFile, N::Number) = seek(mFile.io, N)

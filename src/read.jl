@@ -55,7 +55,6 @@ function read_data!(mFile::MATFile, fsize::Int)
     contents = Any[]
 
     while position(mFile) < fsize
-        @info position(mFile) fsize
         name, content = read_data(mFile)
         push!(names, Symbol(name))
         push!(contents, content)
@@ -178,11 +177,11 @@ function read_data(mFile::MATFile, T::Type{<:NumArray}, c)
 
     # Make sure declared size matches data type x dimensions of an array
     if size == 0
-        emptyType = T == mxCHAR_CLASS ? Char : ConvertAType[T]
+        emptyType = T == mxCHAR_CLASS ? Char : ConvertATypeMJ[T]
         tmp = Array{emptyType}(undef, 0,0)
-    elseif sizeof(ConvertType[dataType]) * prod(dims) != size
+    elseif sizeof(ConvertTypeMJ[dataType]) * prod(dims) != size
         println(position(mFile))
-        error("Requested array of type $(ConvertType[dataType]) \
+        error("Requested array of type $(ConvertTypeMJ[dataType]) \
         and dimensions $(Int.(dims)) does not match delcared size $size.")
     else
         tmp = read(mFile, dataType, dims)
@@ -191,8 +190,8 @@ function read_data(mFile::MATFile, T::Type{<:NumArray}, c)
     # Account for Matlab's compressing data into smaller types
     if T == mxCHAR_CLASS
         data = Char.(tmp)
-    elseif ConvertType[dataType] != ConvertAType[T]
-        data = similar(tmp, ConvertAType[T])
+    elseif ConvertTypeMJ[dataType] != ConvertATypeMJ[T]
+        data = similar(tmp, ConvertATypeMJ[T])
         data .= tmp
     else
         data = tmp
