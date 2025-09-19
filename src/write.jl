@@ -183,7 +183,7 @@ function write_matrix(file, name, arrVal, matVal, dims, data; colIds=Int[], rowI
 end
 
 function write_flags(file, arrID; c=0, g=0, l=0, nzmax=Int32(0))
-    # flags = parse(UInt8, "0000$(c)$(g)$(l)0", base=2)
+    # Setting flags through bit twiddling
     flags = UInt8(8c) | UInt8(4g) | UInt8(2l)
     full_info = reinterpret(UInt32, (UInt8(arrID), flags, UInt16(0)))
     write(file, reinterpret(Int128, (Int32(6), Int32(8), full_info, nzmax)))
@@ -198,8 +198,6 @@ end
 
 function write_name(file, name)
     if length(name) < 5
-        # asciiVector = Int8.([Char(x) for x in name])
-        # append!(asciiVector, padding(length(name), 4))
         asciiVector = UInt32(0)
         for (i,n) in enumerate(name)
             asciiVector |= UInt32(n) << (8 * (4-i))
