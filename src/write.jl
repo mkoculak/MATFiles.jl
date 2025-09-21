@@ -2,7 +2,7 @@ function write_mat(f, args...)
     open(f, "w") do file
         write_header!(file)
         
-        ffile = preferences["compress"] ? IOBuffer(sizehint=500*1024*1024) : file
+        ffile = preferences["compress"] ? IOBuffer() : file
         # Write variables sequentially
         for arg in args
             write_data(ffile, arg)
@@ -343,4 +343,5 @@ function write_data(file, name, data::Vector{<:NamedTuple})
     seekend(file)
 end
 
+# Placeholder matrix for empty numerical matrix
 write_empty(file) = write(file, UInt32(14), UInt32(0))
