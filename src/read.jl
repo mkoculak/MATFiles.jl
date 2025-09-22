@@ -301,3 +301,35 @@ function parse_names(mFile::MATFile, nameLen)
     # Need symbols for construction of a NamedTuple
     return Symbol.(names)
 end
+
+# Read objects of other classes (mostly types newer than v5 specs or custom made)
+function read_data(mFile::MATFile, ::Type{mxOPAQUE_CLASS}, c)
+    sName = parse_name(mFile)
+    # Type system name
+    tName = parse_name(mFile)
+    # Class name
+    cName = parse_name(mFile)
+    # Object metadata
+    name, metadata = read_data(mFile)
+
+    # When type system is MCOS (Matlab Class Object System) first value should be fixed
+    if tName == "MCOS"
+        metadata[1] != 0xdd000000 && error("Expected 0xdd000000 got $(metadata[1])")
+    end
+
+    # Parse object array dimensions from metadata
+    nDims = Int(metadata[2])
+    dims = Int.(metadata[3:2+nDims])
+
+    # Get object IDs
+    nIDs = prod(dims)
+    oIDs = Int.(metadata[3+nDims:2+nDims+nIDs])
+
+    # Get class ID (should be the last value)
+    idx = 3+nDims+nIDs
+    idx != length(metadata) && error("Metadata has more elements than expected")
+    cID = metadata[idx]
+    @info sName, tName, cName, dims, nIDs, oIDs, cID position(mFile)
+
+    return sName, Float64[]
+end
