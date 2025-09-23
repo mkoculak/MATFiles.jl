@@ -23,7 +23,7 @@ function read_header(io::IO)
 
     # Offset might contain information about presence of a subsystem-specific data.
     # All zeros or spaces indicate no information.
-    allSpaces = reinterpret(Int64, fill(UInt8(' '), 8))[1]
+    allSpaces = reinterpret(Int64, ntuple(i -> UInt8(' '), 8))
     # Otherwise, interpret it as the end of standard elements and start of user defined ones.
     offset = read(io, Int64)
     @debug "File offset: $offset (should be either 0 or $allSpaces)"
@@ -56,6 +56,16 @@ function read_data!(mFile::MATFile, fsize::Int)
 
     while position(mFile) < fsize
         name, content = read_data(mFile)
+        push!(names, Symbol(name))
+        push!(contents, content)
+    end
+
+    # Deal with subsystem data if present
+    while !eof(mFile.io)
+        name, content = read_subsystem(mFile)
+        # WARN: Temporarily add subsystem info as normal elements
+        # Makeup names if empty
+        name = isempty(name) ? String(rand(Char.(97:120), 4)) : name
         push!(names, Symbol(name))
         push!(contents, content)
     end
@@ -312,11 +322,50 @@ function read_data(mFile::MATFile, ::Type{mxOPAQUE_CLASS}, c)
     # Object metadata
     name, metadata = read_data(mFile)
 
-    # When type system is MCOS (Matlab Class Object System) first value should be fixed
+    # When type system is MCOS (Matlab Class Object System) we can use class name to check if we're in the subsystem
     if tName == "MCOS"
-        metadata[1] != 0xdd000000 && error("Expected 0xdd000000 got $(metadata[1])")
+        if cName == "FileWrapper__"
+            return sName, parse_cell_metadata(mFile, tName, cName, name, metadata)
+        elseif metadata[1] == 0xdd000000 
+            return sName, parse_metadata(mFile, tName, cName, name, metadata)
+        else
+            @info  "We are here" position(mFile)
+            error("Expected 0xdd000000 as the first metadata field got $(metadata[1])")
+        end
     end
+end
 
+function parse_cell_metadata(mFile, tName, cName, name, metadata)
+    # Each cell in metadata contains different elements that need specialized parsing
+
+    # Linking metadata
+    wrapperVersion, uniqueFields = reinterpret(Int32, metadata[1][1:8])
+    offsets = reinterpret(Int32, metadata[1][9:40])
+    names = Char.(metadata[1][41:offsets[1]]) |> String |> x -> split(x, '\0', keepempty=false)
+
+    # Class identifiers
+    cIden = reinterpret(Int32, metadata[1][offsets[1]+1:offsets[2]])
+
+    # Object identifiers
+    oIden = reinterpret(Int32, metadata[1][offsets[3]+1:offsets[4]])
+
+    # Type 2 Object property identifiers
+    t2Iden = reinterpret(Int32, metadata[1][offsets[4]+1:offsets[5]])
+    @info offsets t2Iden
+
+    # Type 1 Object property identifiers
+    t1Iden = reinterpret(Int32, metadata[1][offsets[2]+1:offsets[3]])
+
+    # Dynamic property metadata
+    dynProp = reinterpret(Int32, metadata[1][offsets[5]+1:offsets[6]])
+    @info offsets dynProp
+
+    # Other offsets are not used
+
+    return (; name=name, tName=tName, cName=cName, metadata=metadata)
+end
+
+function parse_metadata(mFile, tName, cName, name, metadata)
     # Parse object array dimensions from metadata
     nDims = Int(metadata[2])
     dims = Int.(metadata[3:2+nDims])
@@ -329,7 +378,37 @@ function read_data(mFile::MATFile, ::Type{mxOPAQUE_CLASS}, c)
     idx = 3+nDims+nIDs
     idx != length(metadata) && error("Metadata has more elements than expected")
     cID = metadata[idx]
-    @info sName, tName, cName, dims, nIDs, oIDs, cID position(mFile)
 
-    return sName, Float64[]
+    # Returning a named tuple of all metadata to be used while parsing subsystem info
+    return (; name=name, tName=tName, cName=cName, dims=dims, nIDs=nIDs, oIDs=oIDs, cID=cID)
+end
+
+# Read subsystem specific data structures
+function read_subsystem(mFile::MATFile)
+    # First layer is a matrix-wrapper containing each subsystem element as a mxUINT8 matrix
+    # However, it does contain typical MAT file objects, so we can't parse it as such
+
+    # Should be a miMATRIX with full element size
+    mdataType, msize, mpsize = parse_tag(mFile)
+    # Should be a mxUINT8_CLASS with no flags and empty nzmax
+    arrayType, c, g, l, nzmax = parse_flags(mFile)
+    # Should be 1 x size
+    dims = parse_dimensions(mFile)
+    # Should be an empty name
+    subName = parse_name(mFile)
+    # Should be a miUINT8 tag
+    dataType, size, psize = parse_tag(mFile)
+    # Repeated version and endianess tags from the header
+    version = read(mFile, UInt16)
+    endian = String(read(mFile, 2))
+
+    corr_ver = endian == "IM" ? 0x0100 : 0x0001
+    version == corr_ver || @warn "Version number mismatch, got $version (expected $corr_ver)."
+    # These are padded to 8 bytes
+    skip_padding!(mFile, 4, 8)
+
+    # Rest of the matrix should be contained in a struct that we can read as usual
+    name, content = read_data(mFile)
+
+    return name, content
 end
