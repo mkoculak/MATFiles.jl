@@ -344,17 +344,22 @@ function parse_cell_metadata(mFile, tName, cName, name, metadata)
     names = Char.(metadata[1][41:offsets[1]]) |> String |> x -> split(x, '\0', keepempty=false)
 
     # Class identifiers
-    cIden = reinterpret(Int32, metadata[1][offsets[1]+1:offsets[2]])
+    # WARN: made it into tuples, might need to change later
+    cIden = reshape(reinterpret(Int32, metadata[1][offsets[1]+1:offsets[2]]), 4, :)
+    cIden = [tuple(eachcol(cIden)...)]
 
     # Object identifiers
-    oIden = reinterpret(Int32, metadata[1][offsets[3]+1:offsets[4]])
+    # WARN: made it into tuples, might need to change later
+    oIden = reshape(reinterpret(Int32, metadata[1][offsets[3]+1:offsets[4]]), 6, :)
+    oIden = [tuple(eachcol(oIden)...)]
 
     # Type 2 Object property identifiers
-    t2Iden = reinterpret(Int32, metadata[1][offsets[4]+1:offsets[5]])
-    @info offsets t2Iden
+    t2Idens = reinterpret(Int32, metadata[1][offsets[4]+1:offsets[5]])
+    t2Iden = parse_object_identifiers(t2Idens)
 
     # Type 1 Object property identifiers
-    t1Iden = reinterpret(Int32, metadata[1][offsets[2]+1:offsets[3]])
+    t1Idens = reinterpret(Int32, metadata[1][offsets[2]+1:offsets[3]])
+    t1Iden = parse_object_identifiers(t1Idens)
 
     # Dynamic property metadata
     dynProp = reinterpret(Int32, metadata[1][offsets[5]+1:offsets[6]])
@@ -362,7 +367,28 @@ function parse_cell_metadata(mFile, tName, cName, name, metadata)
 
     # Other offsets are not used
 
-    return (; name=name, tName=tName, cName=cName, metadata=metadata)
+    return (; name=name, tName=tName, cName=cName, metadata=(; wrapperVersion=wrapperVersion, uniqueFields=uniqueFields, offsets=offsets, names=names, cIden=cIden, oIden=oIden, t2Iden=t2Iden, t1Iden=t1Iden, dynProp=dynProp), met=metadata[2:end])
+end
+
+function parse_object_identifiers(data)
+    i = 1
+    t2Iden = Any[]
+    while i < length(data)
+        if data[i] == 0
+            i += 1
+        else
+            nBlocks = data[i]
+            @info nBlocks, length(data), i
+            i += 1
+            blocks = Tuple[]
+            for j in 1:nBlocks
+                push!(blocks, (data[i], data[i+1], data[i+2]))
+                i += 3
+            end
+            push!(t2Iden, blocks)
+        end
+    end
+    return t2Iden
 end
 
 function parse_metadata(mFile, tName, cName, name, metadata)
