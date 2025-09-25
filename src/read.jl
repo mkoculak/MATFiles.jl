@@ -61,13 +61,18 @@ function read_data!(mFile::MATFile, fsize::Int)
     end
 
     # Deal with subsystem data if present
+    subContent = Any[]
     while !eof(mFile.io)
-        name, content = read_subsystem(mFile)
-        # WARN: Temporarily add subsystem info as normal elements
-        # Makeup names if empty
-        name = isempty(name) ? String(rand(Char.(97:120), 4)) : name
-        push!(names, Symbol(name))
-        push!(contents, content)
+        content = read_subsystem(mFile)
+
+        push!(subContent, content)
+    end
+
+    # Replace placeholders with data from the subsystem
+    for (i, content) in enumerate(contents)
+        if haskey(content, :oIDs)
+            contents[i] = subContent[1][1].MCOS[1][content.oIDs[1]].data
+        end
     end
 
     mFile.data = NamedTuple(zip(names, contents))
@@ -325,49 +330,96 @@ function read_data(mFile::MATFile, ::Type{mxOPAQUE_CLASS}, c)
     # When type system is MCOS (Matlab Class Object System) we can use class name to check if we're in the subsystem
     if tName == "MCOS"
         if cName == "FileWrapper__"
-            return sName, parse_cell_metadata(mFile, tName, cName, name, metadata)
+            return sName, parse_cell_metadata(metadata)
         elseif metadata[1] == 0xdd000000 
             return sName, parse_metadata(mFile, tName, cName, name, metadata)
         else
-            @info  "We are here" position(mFile)
             error("Expected 0xdd000000 as the first metadata field got $(metadata[1])")
         end
     end
 end
 
-function parse_cell_metadata(mFile, tName, cName, name, metadata)
+function parse_cell_metadata(metadata)
     # Each cell in metadata contains different elements that need specialized parsing
 
     # Linking metadata
-    wrapperVersion, uniqueFields = reinterpret(Int32, metadata[1][1:8])
-    offsets = reinterpret(Int32, metadata[1][9:40])
-    names = Char.(metadata[1][41:offsets[1]]) |> String |> x -> split(x, '\0', keepempty=false)
+    linking = parse_linking(metadata)
+
+
+    return linking, metadata[2:end]
+end
+
+function parse_linking(meta)
+    metadata = meta[1]
+    wrapperVersion, uniqueFields = reinterpret(Int32, metadata[1:8])
+    # Always 8 Int32 offsets
+    offsets = reinterpret(Int32, metadata[9:40])
+    names = Char.(metadata[41:offsets[1]]) |> String |> x -> split(x, '\0', keepempty=false)
 
     # Class identifiers
     # WARN: made it into tuples, might need to change later
-    cIden = reshape(reinterpret(Int32, metadata[1][offsets[1]+1:offsets[2]]), 4, :)
-    cIden = [tuple(eachcol(cIden)...)]
+    cIden = reshape(reinterpret(Int32, metadata[offsets[1]+1:offsets[2]]), 4, :)
+    cIden = tuple.(eachrow(cIden)...)
 
     # Object identifiers
     # WARN: made it into tuples, might need to change later
-    oIden = reshape(reinterpret(Int32, metadata[1][offsets[3]+1:offsets[4]]), 6, :)
-    oIden = [tuple(eachcol(oIden)...)]
+    oIden = reshape(reinterpret(Int32, metadata[offsets[3]+1:offsets[4]]), 6, :)
+    oIden = tuple.(eachrow(oIden)...)
 
     # Type 2 Object property identifiers
-    t2Idens = reinterpret(Int32, metadata[1][offsets[4]+1:offsets[5]])
+    t2Idens = reinterpret(Int32, metadata[offsets[4]+1:offsets[5]])
     t2Iden = parse_object_identifiers(t2Idens)
 
     # Type 1 Object property identifiers
-    t1Idens = reinterpret(Int32, metadata[1][offsets[2]+1:offsets[3]])
+    t1Idens = reinterpret(Int32, metadata[offsets[2]+1:offsets[3]])
     t1Iden = parse_object_identifiers(t1Idens)
 
     # Dynamic property metadata
-    dynProp = reinterpret(Int32, metadata[1][offsets[5]+1:offsets[6]])
-    @info offsets dynProp
+    dynProp = reinterpret(Int32, metadata[offsets[5]+1:offsets[6]])
 
-    # Other offsets are not used
+    # Offsets 6 and 7 shouldn't have any information
+    off6 = reinterpret(Int32, metadata[offsets[6]+1:offsets[7]])
+    off7 = reinterpret(Int32, metadata[offsets[7]+1:offsets[8]])
 
-    return (; name=name, tName=tName, cName=cName, metadata=(; wrapperVersion=wrapperVersion, uniqueFields=uniqueFields, offsets=offsets, names=names, cIden=cIden, oIden=oIden, t2Iden=t2Iden, t1Iden=t1Iden, dynProp=dynProp), met=metadata[2:end])
+    # Combine info from all regions
+    objects = NamedTuple[]
+    # Iterate over every object in the subsystem
+    # Going in reversed order as nested types appear after the container
+    for objIdx in reverse(1:length(oIden))
+        obj = oIden[objIdx]
+        # Skip the first empty row
+        obj[1] == 0 && continue
+        class = names[cIden[obj[1]+1][2]]
+        objID = obj[6]
+
+        if obj[4] != 0
+            props = t1Iden[obj[4]]
+        elseif obj[5] != 0
+            props = t2Iden[obj[5]]
+        else
+            error("Couldn't parse object type properly.")
+        end
+        
+        props = map(x -> (names[x[1]], x[2], x[3]), props)
+
+        # Read the actual data of the object
+        if class == "string"
+            data = read_string(meta, props)
+        elseif class == "duration"
+            data = read_duration(meta, props)
+        elseif class == "datetime"
+            data = read_datetime(meta, props)
+        else
+            @warn "Reading not implemented for type \"$class\", writing a placeholder empty matrix instead."
+            data = zeros(Float64,0,0)
+        end
+
+        # Correct the idx (for the first empty object) matching back to the objects in the main part of MAT file
+        objIdx -= 1
+        pushfirst!(objects, (; objIdx=objIdx, class=class, objID=objID, props=props, data=data))
+    end
+
+    return objects
 end
 
 function parse_object_identifiers(data)
@@ -378,7 +430,6 @@ function parse_object_identifiers(data)
             i += 1
         else
             nBlocks = data[i]
-            @info nBlocks, length(data), i
             i += 1
             blocks = Tuple[]
             for j in 1:nBlocks
@@ -436,5 +487,67 @@ function read_subsystem(mFile::MATFile)
     # Rest of the matrix should be contained in a struct that we can read as usual
     name, content = read_data(mFile)
 
+    # These elements do not have names, so we are skipping the return
+    return content
+end
+
+function value_or_default(elements, props, needle)
+    nIdx = findfirst(x -> x[1] == needle, props)
+    if !isnothing(nIdx)
+        value = elements[3+props[nIdx][3]]
+    else
+        idx = findfirst(x -> !isempty(x) && Symbol(needle) in keys(x[1]), elements[end])
+        value = elements[end][idx][1][Symbol(needle)]
+    end
+
+    return value
+end
+
     return name, content
+end
+function read_duration(elements, props)
+    # Check if format property is given or has to be fetched from the "default" properties container
+    fmtIdx = map(x -> x[1]=="fmt", props)
+    if any(fmtIdx)
+        fmt = elements[3+props[fmtIdx[1]][3]]
+    else
+        idx = findfirst(x -> !isempty(x) && :fmt in keys(x[1]), elements[end])
+        fmt = elements[end][idx][1].fmt
+    end
+
+    # Get the array with data
+    millisIdx = props[map(x -> x[1]=="millis", props)]
+    data = elements[3+millisIdx[1][3]]
+
+    return data, fmt
+end
+
+function read_string(elements, props)
+    # Check if we have only one property "any"
+    if length(props) > 1 || props[1][1] != "any"
+        error("Expected one property in string of class 'any', got $props")
+    end
+
+    # Find the element that holds the data - correct for offset in numbering
+    element = elements[3+props[1][3]]
+
+    version = element[1]
+    nDims = element[2]
+    dims = element[3:3+nDims-1]
+    stringSizes = element[3+nDims:3+nDims+prod(dims)-1]
+    # Convert the remaining elements to UInt16
+    letters = reinterpret(UInt16, element[3+nDims+prod(dims):end])
+
+    stringArray = fill("", dims...)
+    ptr = 1
+    for (i, sSize) in enumerate(stringSizes)
+        # Skip sizes indicating missing string
+        sSize == 0xffffffffffffffff && continue
+
+        sSize = Int(sSize)
+        stringArray[i] = String(Char.(letters[ptr:ptr+sSize-1]))
+        ptr += sSize
+    end
+
+    return stringArray
 end
