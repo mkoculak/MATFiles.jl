@@ -411,6 +411,8 @@ function parse_linking(meta)
             data = read_duration(meta, props)
         elseif class == "string"
             data = read_string(meta, props)
+        elseif class == "table"
+            data = read_table(objects, meta, props)
         else
             @warn "Reading not implemented for type \"$class\", writing a placeholder empty matrix instead."
             data = zeros(Float64,0,0)
@@ -530,7 +532,7 @@ end
 
 function get_defaults(elements, needle)
     idx = findfirst(x -> !isempty(x) && Symbol(needle) in keys(x[1]), elements[end])
-    return elements[end][idx][1][Symbol(needle)]
+    return isnothing(idx) ? nothing : elements[end][idx][1][Symbol(needle)]
 end
 
 function read_calendar_duration(elements, props)
@@ -598,4 +600,33 @@ function read_string(elements, props)
     end
 
     return stringArray
+end
+
+function read_table(objects, elements, props)
+    # Seems to have only the data property defaults, we will assume for now that that is always non-empty
+    nDims = value_or_default(elements, props, "ndims")
+    nRows = value_or_default(elements, props, "nrows")
+    rowNames = value_or_default(elements, props, "rownames")
+    nVars = value_or_default(elements, props, "nvars")
+    varNames = value_or_default(elements, props, "varnames")
+    # Parsing this generically does not work right now, so we'll do it manually
+    pIdx = findfirst(x -> x[1] == "props", props)
+    prop = elements[3+props[pIdx][3]][1]
+
+    data = value_or_default(elements, props, "data")
+
+    # Check if any column is actually a nested object from subsystem
+    for (i, col) in enumerate(data)
+        if eltype(col) == UInt32 && get(col, 1, nothing) == 0xdd000000
+            # Minimal call to extract important metadata
+            meta = parse_metadata("", "", "", "", col)
+            dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
+            # Error if we cannot find the nested data
+            isnothing(dIdx) && error("Nested object not parsed yet!")
+            data[i] = objects[dIdx].data
+        end
+    end
+
+    # For now we will treat a table as a NamedTuple of equal matrices
+    return (; zip(Symbol.(String.(vec.(varNames))), data)...)
 end
