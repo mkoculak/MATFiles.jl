@@ -403,12 +403,14 @@ function parse_linking(meta)
         props = map(x -> (names[x[1]], x[2], x[3]), props)
 
         # Read the actual data of the object
-        if class == "string"
-            data = read_string(meta, props)
-        elseif class == "duration"
-            data = read_duration(meta, props)
+        if class == "calendarDuration"
+            data = read_calendar_duration(meta, props)
         elseif class == "datetime"
             data = read_datetime(meta, props)
+        elseif class == "duration"
+            data = read_duration(meta, props)
+        elseif class == "string"
+            data = read_string(meta, props)
         else
             @warn "Reading not implemented for type \"$class\", writing a placeholder empty matrix instead."
             data = zeros(Float64,0,0)
@@ -495,12 +497,51 @@ function value_or_default(elements, props, needle)
     nIdx = findfirst(x -> x[1] == needle, props)
     if !isnothing(nIdx)
         value = elements[3+props[nIdx][3]]
+        # Handle values packed into a NamedTuple
+        if isa(value, Vector{<:NamedTuple})
+            # Pick the first element (should be the only one)
+            value = length(value) == 1 ? value[1] : error("Unexpected vector of proerties of length $(length(value))")
+            
+            defaults = get_defaults(elements, needle)[1]
+            pNames = Symbol[]
+            pContent = Any[]
+
+            # Check if each property is empty and take the default if that exists and is not empty
+            for k in keys(value) 
+                content = isempty(value[k]) ? get(defaults, k, value[k]) : value[k]
+                push!(pNames, k)
+                push!(pContent, content)
+            end
+
+            # Add properties that are only in defaults
+            for k in keys(defaults)
+                if !haskey(value, k)
+                    push!(pNames, k)
+                    push!(pContent, defaults[k])
+                end
+            end
+        end
     else
-        idx = findfirst(x -> !isempty(x) && Symbol(needle) in keys(x[1]), elements[end])
-        value = elements[end][idx][1][Symbol(needle)]
+        value = get_defaults(elements, needle)
     end
 
     return value
+end
+
+function get_defaults(elements, needle)
+    idx = findfirst(x -> !isempty(x) && Symbol(needle) in keys(x[1]), elements[end])
+    return elements[end][idx][1][Symbol(needle)]
+end
+
+function read_calendar_duration(elements, props)
+    # Both properties and defaults are bundled in a NamedTuple
+    cmps = value_or_default(elements, props, "components")
+    fmt = value_or_default(elements, props, "fmt")
+
+    data = @. Month(cmps.months) + Day(cmps.days) + Millisecond(cmps.millis)
+
+    # TODO: Fix formating as it is ignored right now
+    return data, fmt
 end
 
 function read_datetime(elements, props)
@@ -514,6 +555,7 @@ function read_datetime(elements, props)
     # Convert to Julia's DateTime
     data = DateTime.(UTM.(UNIXEPOCH .+ data))
 
+    # TODO: Fix formating and timezone inclusion as it is ignored right now
     return data, fmt, tz
 end
 
