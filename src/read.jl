@@ -503,17 +503,23 @@ function value_or_default(elements, props, needle)
     return value
 end
 
-    return name, content
+function read_datetime(elements, props)
+    tz = value_or_default(elements, props, "tz")
+    fmt = value_or_default(elements, props, "fmt")
+
+    # Get the array with data
+    dataIdx = props[map(x -> x[1]=="data", props)]
+    # Data is of type double, but is storing integers
+    data = Int64.(elements[3+dataIdx[1][3]])
+    # Convert to Julia's DateTime
+    data = DateTime.(UTM.(UNIXEPOCH .+ data))
+
+    return data, fmt, tz
 end
+
 function read_duration(elements, props)
     # Check if format property is given or has to be fetched from the "default" properties container
-    fmtIdx = map(x -> x[1]=="fmt", props)
-    if any(fmtIdx)
-        fmt = elements[3+props[fmtIdx[1]][3]]
-    else
-        idx = findfirst(x -> !isempty(x) && :fmt in keys(x[1]), elements[end])
-        fmt = elements[end][idx][1].fmt
-    end
+    fmt = value_or_default(elements, props, "fmt")
 
     # Get the array with data
     millisIdx = props[map(x -> x[1]=="millis", props)]
