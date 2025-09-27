@@ -69,9 +69,11 @@ function read_data!(mFile::MATFile, fsize::Int)
     end
 
     # Replace placeholders with data from the subsystem
-    for (i, content) in enumerate(contents)
-        if haskey(content, :oIDs)
-            contents[i] = subContent[1][1].MCOS[1][content.oIDs[1]].data
+    if !isempty(subContent)
+        for (i, content) in enumerate(contents)
+            if haskey(content, :oIDs)
+                contents[i] = subContent[1][1].MCOS[1][content.oIDs[1]].data
+            end
         end
     end
 
@@ -317,6 +319,38 @@ function parse_names(mFile::MATFile, nameLen)
     return Symbol.(names)
 end
 
+function read_data(mFile::MATFile, ::Type{mxOBJECT_CLASS}, c)
+    dims = parse_dimensions(mFile)
+    oName = parse_name(mFile)
+
+    # TODO: This is the only difference from struct, maybe abstract it?
+    # Class name
+    cName = parse_name(mFile)
+    @info cName
+
+    # Get the number of names/fields in the struct
+    nameLen = parse_dimensions(mFile)
+    fNames = parse_names(mFile, nameLen)
+
+    structs = NamedTuple[]
+    # Account for a matrix of structs
+    for j in 1:prod(dims)
+        fData = []
+        for i in fNames
+            name, data = read_data(mFile)
+            push!(fData, data)
+        end
+        # Pushing the class name as a field in the struct
+        push!(fNames, :class)
+        push!(fData, cName)
+        push!(structs, NamedTuple(zip(fNames, fData)))
+    end
+
+    # Using identity function to infer the common eltype of vector elements
+    return oName, identity.(structs)
+end
+
+
 # Read objects of other classes (mostly types newer than v5 specs or custom made)
 function read_data(mFile::MATFile, ::Type{mxOPAQUE_CLASS}, c)
     sName = parse_name(mFile)
@@ -415,8 +449,6 @@ function parse_linking(meta)
             data = read_table(objects, meta, props)
         elseif class == "timetable"
             data = read_timetable(objects, meta, props)
-        elseif class == "Map"
-            data = read_map(objects, meta, props)
         else
             @warn "Reading not implemented for type \"$class\", writing a placeholder empty matrix instead."
             data = zeros(Float64,0,0)
