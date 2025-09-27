@@ -413,6 +413,8 @@ function parse_linking(meta)
             data = read_string(meta, props)
         elseif class == "table"
             data = read_table(objects, meta, props)
+        elseif class == "timetable"
+            data = read_timetable(objects, meta, props)
         else
             @warn "Reading not implemented for type \"$class\", writing a placeholder empty matrix instead."
             data = zeros(Float64,0,0)
@@ -504,7 +506,8 @@ function value_or_default(elements, props, needle)
             # Pick the first element (should be the only one)
             value = length(value) == 1 ? value[1] : error("Unexpected vector of proerties of length $(length(value))")
             
-            defaults = get_defaults(elements, needle)[1]
+            defaults = get_defaults(elements, needle)
+            defaults = isnothing(defaults) ? NamedTuple() : defaults[1]
             pNames = Symbol[]
             pContent = Any[]
 
@@ -629,4 +632,23 @@ function read_table(objects, elements, props)
 
     # For now we will treat a table as a NamedTuple of equal matrices
     return (; zip(Symbol.(String.(vec.(varNames))), data)...)
+end
+
+function read_timetable(objects, elements, props)
+    prop = value_or_default(elements, props, "any")
+
+    cNames = vec(String.(vec.(prop.varNames)))
+    data = prop.data
+
+    # Time stored as another object - exctracting the location and data
+    meta = parse_metadata("", "", "", "", prop.rowTimes)
+    dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
+    # Error if we cannot find the nested data
+    isnothing(dIdx) && error("Nested object not parsed yet!")
+
+    # WARN: Only extracting timestamps igoring all metadata
+    times = vec(objects[dIdx].data[1])
+    pushfirst!(cNames, "Time")
+
+    return (; zip(Symbol.(cNames), [times, data...])...)
 end
