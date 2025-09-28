@@ -350,6 +350,16 @@ function read_data(mFile::MATFile, ::Type{mxOBJECT_CLASS}, c)
     return oName, identity.(structs)
 end
 
+function read_data(mFile::MATFile, ::Type{mxFUNCTION_CLASS}, c)
+    dims = parse_dimensions(mFile)
+    name = parse_name(mFile)
+    
+
+    # We ignore the `name` as it should be empty
+    n, tmp = read_data(mFile)
+
+    return name, tmp[1]
+end
 
 # Read objects of other classes (mostly types newer than v5 specs or custom made)
 function read_data(mFile::MATFile, ::Type{mxOPAQUE_CLASS}, c)
@@ -443,6 +453,10 @@ function parse_linking(meta)
             data = read_datetime(meta, props)
         elseif class == "duration"
             data = read_duration(meta, props)
+        elseif class == "function_handle_workspace"
+            data = read_function_handle(meta, props)
+        elseif class == "Map"
+            data = read_map(objects, meta, props)
         elseif class == "string"
             data = read_string(meta, props)
         elseif class == "table"
@@ -705,4 +719,8 @@ function read_map(objects, elements, props)
     end
     
     return Dict(zip(keys, values))
+end
+
+function read_function_handle(elements, props)
+    @info props
 end
