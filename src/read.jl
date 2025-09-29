@@ -326,7 +326,6 @@ function read_data(mFile::MATFile, ::Type{mxOBJECT_CLASS}, c)
     # TODO: This is the only difference from struct, maybe abstract it?
     # Class name
     cName = parse_name(mFile)
-    @info cName
 
     # Get the number of names/fields in the struct
     nameLen = parse_dimensions(mFile)
@@ -723,4 +722,6 @@ end
 
 function read_function_handle(elements, props)
     @info props
+
+    return nothing
 end

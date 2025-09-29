@@ -1,7 +1,7 @@
 module MATIO
 
 using CodecZlib: ZlibDecompressorStream, ZlibCompressorStream, TranscodingStreams.TOKEN_END
-using Dates: DateFormat, format, now, DateTime, UTM, UNIXEPOCH, Month, Day, Millisecond
+using Dates: DateFormat, DateTime, Month, Day, Millisecond, UTM, UNIXEPOCH, format, now
 using SparseArrays: AbstractSparseArray, SparseMatrixCSC
 
 const version = pkgversion(MATIO)
