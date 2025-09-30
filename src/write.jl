@@ -1,3 +1,8 @@
+"""
+    write_mat(file, args...)
+
+Write MAT files to disk.
+"""
 function write_mat(f, args...)
     open(f, "w") do file
         write_header!(file)

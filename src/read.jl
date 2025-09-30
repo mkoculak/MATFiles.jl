@@ -1,3 +1,8 @@
+"""
+    read_mat(file)
+
+Read a Matlab MAT file from disk.
+"""
 function read_mat(file)
     open(file, "r") do io
         # Parse information from the header
