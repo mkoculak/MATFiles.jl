@@ -324,6 +324,7 @@ function parse_names(mFile::MATFile, nameLen)
     return Symbol.(names)
 end
 
+# Read non-matrix data objects
 function read_data(mFile::MATFile, ::Type{mxOBJECT_CLASS}, c)
     dims = parse_dimensions(mFile)
     oName = parse_name(mFile)
@@ -354,6 +355,7 @@ function read_data(mFile::MATFile, ::Type{mxOBJECT_CLASS}, c)
     return oName, identity.(structs)
 end
 
+# Read function objects
 function read_data(mFile::MATFile, ::Type{mxFUNCTION_CLASS}, c)
     dims = parse_dimensions(mFile)
     name = parse_name(mFile)
