@@ -603,6 +603,12 @@ function read_calendar_duration(elements, props)
     return data, fmt
 end
 
+function read_categorical(elements, props)
+    @info props
+
+    return nothing
+end
+
 function read_datetime(elements, props)
     tz = value_or_default(elements, props, "tz")
     fmt = value_or_default(elements, props, "fmt")
@@ -618,6 +624,12 @@ function read_datetime(elements, props)
     return data, fmt, tz
 end
 
+function read_dictionary(elements, props)
+    @info props
+
+    return nothing
+end
+
 function read_duration(elements, props)
     # Check if format property is given or has to be fetched from the "default" properties container
     fmt = value_or_default(elements, props, "fmt")
@@ -627,6 +639,38 @@ function read_duration(elements, props)
     data = elements[3+millisIdx[1][3]]
 
     return data, fmt
+end
+
+function read_enumeration(elements, props)
+    @info props
+
+    return nothing
+end
+
+function read_function_handle(elements, props)
+    @info props
+
+    return nothing
+end
+
+function read_map(objects, elements, props)
+    serialization = value_or_default(elements, props, "serialization")
+
+    # Possible types: 'char' (default) | 'double' | 'single' | 'int32' | 'uint32' | 'int64' | 'uint64'
+    keyType = String(vec(serialization.keyType))
+    keys = serialization.keys
+    if keyType == "char"
+        keys = String.(vec.(keys))
+    end
+    # Can be of 'any' type | 'char' | 'bool'| numerical
+    # Matlab allows for assigning e.g. strings as values, but can't properly read back non-ascii characters
+    valueType = String(vec(serialization.valueType))
+    values = serialization.values
+    if valueType == "char"
+        values = String.(vec.(values))
+    end
+    
+    return Dict(zip(keys, values))
 end
 
 function read_string(elements, props)
@@ -707,27 +751,7 @@ function read_timetable(objects, elements, props)
     return (; zip(Symbol.(cNames), [times, data...])...)
 end
 
-function read_map(objects, elements, props)
-    serialization = value_or_default(elements, props, "serialization")
-
-    # Possible types: 'char' (default) | 'double' | 'single' | 'int32' | 'uint32' | 'int64' | 'uint64'
-    keyType = String(vec(serialization.keyType))
-    keys = serialization.keys
-    if keyType == "char"
-        keys = String.(vec.(keys))
-    end
-    # Can be of 'any' type | 'char' | 'bool'| numerical
-    # Matlab allows for assigning e.g. strings as values, but can't properly read back non-ascii characters
-    valueType = String(vec(serialization.valueType))
-    values = serialization.values
-    if valueType == "char"
-        values = String.(vec.(values))
-    end
-    
-    return Dict(zip(keys, values))
-end
-
-function read_function_handle(elements, props)
+function read_timeseries(elements, props)
     @info props
 
     return nothing
