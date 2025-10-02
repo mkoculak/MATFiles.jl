@@ -457,6 +457,8 @@ function parse_linking(meta)
             data = read_calendar_duration(meta, props)
         elseif class == "datetime"
             data = read_datetime(meta, props)
+        elseif class == "dictionary"
+            data = read_dictionary(objects, meta, props)
         elseif class == "duration"
             data = read_duration(meta, props)
         elseif class == "function_handle_workspace"
@@ -624,10 +626,32 @@ function read_datetime(elements, props)
     return data, fmt, tz
 end
 
-function read_dictionary(elements, props)
-    @info props
+function read_dictionary(objects, elements, props)
+    data = value_or_default(elements, props, "data")
 
-    return nothing
+    # TODO: We perform this check in many objects - probably should abstract it
+    # Check if the keys are another object
+    dKey = data.Key
+    if eltype(dKey) == UInt32 && get(dKey, 1, nothing) == 0xdd000000
+            # Minimal call to extract important metadata
+            meta = parse_metadata("", "", "", "", dKey)
+            dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
+            # Error if we cannot find the nested data
+            isnothing(dIdx) && error("Nested object not parsed yet!")
+            dKey = objects[dIdx].data
+    end
+    # Check if the values are another object
+    dVal = data.Value
+    if eltype(dVal) == UInt32 && get(dVal, 1, nothing) == 0xdd000000
+            # Minimal call to extract important metadata
+            meta = parse_metadata("", "", "", "", dVal)
+            dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
+            # Error if we cannot find the nested data
+            isnothing(dIdx) && error("Nested object not parsed yet!")
+            dVal = objects[dIdx].data
+    end
+
+    return Dict(zip(dKey, dVal))
 end
 
 function read_duration(elements, props)
