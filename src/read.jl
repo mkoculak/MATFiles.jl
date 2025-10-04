@@ -455,6 +455,8 @@ function parse_linking(meta)
         # Read the actual data of the object
         if class == "calendarDuration"
             data = read_calendar_duration(meta, props)
+        elseif class == "categorical"
+            data = read_categorical(objects, meta, props)
         elseif class == "datetime"
             data = read_datetime(meta, props)
         elseif class == "dictionary"
@@ -605,10 +607,18 @@ function read_calendar_duration(elements, props)
     return data, fmt
 end
 
-function read_categorical(elements, props)
-    @info props
+function read_categorical(objects, elements, props)
 
-    return nothing
+    categoryNames = value_or_default(elements, props, "categoryNames")
+    codes = value_or_default(elements, props, "codes")
+    isProtected = value_or_default(elements, props, "isProtected")
+    isOrdinal = value_or_default(elements, props, "isOrdinal")
+
+    # Cleaning up types
+    categoryNames = String.(vec.(categoryNames))
+    codes = Int.(codes)
+    # Returning as a NamedTuple as there is no categorical array type in Julia Base
+    return (; categoryNames=categoryNames, codes=codes, isProtected=isProtected, isOrdinal=isOrdinal)
 end
 
 function read_datetime(elements, props)
