@@ -473,6 +473,17 @@ function parse_linking(meta)
             data = read_table(objects, meta, props)
         elseif class == "timetable"
             data = read_timetable(objects, meta, props)
+
+        elseif class == "timeseries"
+            data = read_timeseries(objects, meta, props)
+        elseif class == "qualmetadata"
+            data = read_qualmetadata(objects, meta, props)
+        elseif class == "timemetadata"
+            data = read_timemetadata(objects, meta, props)
+        elseif class == "interpolation"
+            data = read_interpolation(objects, meta, props)
+        elseif class == "datametadata"
+            data = read_datametadata(objects, meta, props)
         else
             @warn "Reading not implemented for type \"$class\", writing a placeholder empty matrix instead."
             data = zeros(Float64,0,0)
@@ -636,6 +647,20 @@ function read_datetime(elements, props)
     return data, fmt, tz
 end
 
+# Checks if the element is an object and if so returns the actual contents
+function nested_object_check(element, objects)
+    if eltype(element) == UInt32 && get(element, 1, nothing) == 0xdd000000
+        # Minimal call to extract important metadata
+        meta = parse_metadata("", "", "", "", element)
+        dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
+        # Error if we cannot find the nested data
+        isnothing(dIdx) && error("Nested object not parsed yet!")
+        return objects[dIdx].data
+    else
+        return element
+    end
+end
+
 function read_dictionary(objects, elements, props)
     data = value_or_default(elements, props, "data")
 
@@ -643,22 +668,22 @@ function read_dictionary(objects, elements, props)
     # Check if the keys are another object
     dKey = data.Key
     if eltype(dKey) == UInt32 && get(dKey, 1, nothing) == 0xdd000000
-            # Minimal call to extract important metadata
-            meta = parse_metadata("", "", "", "", dKey)
-            dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
-            # Error if we cannot find the nested data
-            isnothing(dIdx) && error("Nested object not parsed yet!")
-            dKey = objects[dIdx].data
+        # Minimal call to extract important metadata
+        meta = parse_metadata("", "", "", "", dKey)
+        dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
+        # Error if we cannot find the nested data
+        isnothing(dIdx) && error("Nested object not parsed yet!")
+        dKey = objects[dIdx].data
     end
     # Check if the values are another object
     dVal = data.Value
     if eltype(dVal) == UInt32 && get(dVal, 1, nothing) == 0xdd000000
-            # Minimal call to extract important metadata
-            meta = parse_metadata("", "", "", "", dVal)
-            dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
-            # Error if we cannot find the nested data
-            isnothing(dIdx) && error("Nested object not parsed yet!")
-            dVal = objects[dIdx].data
+        # Minimal call to extract important metadata
+        meta = parse_metadata("", "", "", "", dVal)
+        dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
+        # Error if we cannot find the nested data
+        isnothing(dIdx) && error("Nested object not parsed yet!")
+        dVal = objects[dIdx].data
     end
 
     return Dict(zip(dKey, dVal))
@@ -785,8 +810,55 @@ function read_timetable(objects, elements, props)
     return (; zip(Symbol.(cNames), [times, data...])...)
 end
 
-function read_timeseries(elements, props)
-    @info props
+function read_timeseries(objects, elements, props)
+    # @info props
+    name = value_or_default(elements, props, "Name")
+    dInfo = value_or_default(elements, props, "DataInfo")
+    tInfo = value_or_default(elements, props, "TimeInfo")
+    qInfo = value_or_default(elements, props, "QualityInfo")
+
+    data = value_or_default(elements, props, "Data_")
+
+    @info dInfo
+    ndInfo = nested_object_check(dInfo, objects)
+    @info nested_object_check(ndInfo[1], objects)
+    return nothing
+end
+
+function read_qualmetadata(objects, elements, props)
+    code = value_or_default(elements, props, "Code")
+    desc = value_or_default(elements, props, "Description")
+    uData = value_or_default(elements, props, "UserData")
+
+    return code, desc, uData
+end
+
+function read_timemetadata(objects, elements, props)
+    propVec = []
+
+    for prop in props
+        push!(propVec, Symbol(prop[1]) => value_or_default(elements, props, prop[1]))
+    end
+
+    return (; propVec...)
+end
+
+function read_interpolation(objects, elements, props)
+    fHandle = value_or_default(elements, props, "Fhandle")
+    name = value_or_default(elements, props, "Name")
+
+    return fHandle, name
+end
+
+function read_datametadata(objects, elements, props)
+    interp = value_or_default(elements, props, "Interpolation")
+    uData = value_or_default(elements, props, "UserData")
+
+    return interp, uData
+end
+
+function read_generic(objects, elements, props)
+    # @info props
 
     return nothing
 end
