@@ -38,7 +38,7 @@ function read_header(io::IO)
         fsize = position(io)
         seek(io, 124)
     else
-        @warn "File contains subsystem information, but no read function is implemented so it will be ignored."
+        # @warn "File contains subsystem information, but no read function is implemented so it will be ignored."
         fsize = offset
     end
 
@@ -359,7 +359,6 @@ end
 function read_data(mFile::MATFile, ::Type{mxFUNCTION_CLASS}, c)
     dims = parse_dimensions(mFile)
     name = parse_name(mFile)
-    
 
     # We ignore the `name` as it should be empty
     n, tmp = read_data(mFile)
@@ -666,25 +665,10 @@ function read_dictionary(objects, elements, props)
 
     # TODO: We perform this check in many objects - probably should abstract it
     # Check if the keys are another object
-    dKey = data.Key
-    if eltype(dKey) == UInt32 && get(dKey, 1, nothing) == 0xdd000000
-        # Minimal call to extract important metadata
-        meta = parse_metadata("", "", "", "", dKey)
-        dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
-        # Error if we cannot find the nested data
-        isnothing(dIdx) && error("Nested object not parsed yet!")
-        dKey = objects[dIdx].data
-    end
+    dKey = nested_object_check(data.Key, objects)
+
     # Check if the values are another object
-    dVal = data.Value
-    if eltype(dVal) == UInt32 && get(dVal, 1, nothing) == 0xdd000000
-        # Minimal call to extract important metadata
-        meta = parse_metadata("", "", "", "", dVal)
-        dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
-        # Error if we cannot find the nested data
-        isnothing(dIdx) && error("Nested object not parsed yet!")
-        dVal = objects[dIdx].data
-    end
+    dVal = nested_object_check(data.Value, objects)
 
     return Dict(zip(dKey, dVal))
 end
@@ -777,14 +761,7 @@ function read_table(objects, elements, props)
 
     # Check if any column is actually a nested object from subsystem
     for (i, col) in enumerate(data)
-        if eltype(col) == UInt32 && get(col, 1, nothing) == 0xdd000000
-            # Minimal call to extract important metadata
-            meta = parse_metadata("", "", "", "", col)
-            dIdx = findfirst(x -> x.objIdx == meta.oIDs[1], objects)
-            # Error if we cannot find the nested data
-            isnothing(dIdx) && error("Nested object not parsed yet!")
-            data[i] = objects[dIdx].data
-        end
+        data[i] = nested_object_check(col, objects)
     end
 
     # For now we will treat a table as a NamedTuple of equal matrices
@@ -814,15 +791,17 @@ function read_timeseries(objects, elements, props)
     # @info props
     name = value_or_default(elements, props, "Name")
     dInfo = value_or_default(elements, props, "DataInfo")
+    dInfo = nested_object_check(dInfo, objects)
+
     tInfo = value_or_default(elements, props, "TimeInfo")
+    tInfo = nested_object_check(tInfo, objects)
+
     qInfo = value_or_default(elements, props, "QualityInfo")
+    qInfo = nested_object_check(qInfo, objects)
 
     data = value_or_default(elements, props, "Data_")
 
-    @info dInfo
-    ndInfo = nested_object_check(dInfo, objects)
-    @info nested_object_check(ndInfo[1], objects)
-    return nothing
+    return (; Name=name, DataInfo=dInfo, TimeInfo=tInfo, QualityInfo=qInfo, Data_=data)
 end
 
 function read_qualmetadata(objects, elements, props)
@@ -830,7 +809,7 @@ function read_qualmetadata(objects, elements, props)
     desc = value_or_default(elements, props, "Description")
     uData = value_or_default(elements, props, "UserData")
 
-    return code, desc, uData
+    return (; Code=code, Description=desc, UserData=uData)
 end
 
 function read_timemetadata(objects, elements, props)
@@ -852,13 +831,10 @@ end
 
 function read_datametadata(objects, elements, props)
     interp = value_or_default(elements, props, "Interpolation")
+    interp = nested_object_check(interp, objects)
+
     uData = value_or_default(elements, props, "UserData")
+    uData = nested_object_check(uData, objects)
 
-    return interp, uData
-end
-
-function read_generic(objects, elements, props)
-    # @info props
-
-    return nothing
+    return (; Interpolation=interp, UserData=uData)
 end
