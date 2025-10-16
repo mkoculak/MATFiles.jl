@@ -68,7 +68,7 @@ function read_data!(mFile::MATFile, fsize::Int)
     # Deal with subsystem data if present
     subContent = Any[]
     while !eof(mFile.io)
-        content = read_subsystem(mFile)
+        sNames, content = read_subsystem(mFile)
 
         push!(subContent, content)
     end
@@ -76,7 +76,10 @@ function read_data!(mFile::MATFile, fsize::Int)
     # Replace placeholders with data from the subsystem
     if !isempty(subContent)
         for (i, content) in enumerate(contents)
-            if haskey(content, :oIDs)
+            # Special case for enums
+            if haskey(content, :EnumerationInstanceTag)
+                contents[i] = populate_enum(content, subContent)
+            elseif haskey(content, :oIDs)
                 contents[i] = subContent[1][1].MCOS[1][content.oIDs[1]].data
             end
         end
@@ -85,6 +88,17 @@ function read_data!(mFile::MATFile, fsize::Int)
     mFile.data = NamedTuple(zip(names, contents))
 
     return nothing
+end
+
+function populate_enum(content, subContent)
+    className = subContent[1][1].MCOS[1][1].names[content.ClassName[1]]
+    valueNames = [subContent[1][1].MCOS[1][1].names[x] for x in content.ValueNames]
+    builtinClassName = subContent[1][1].MCOS[1][1].names[content.BuiltinClassName[1]]
+
+    valObjects = [parse_metadata("", "", "", "", x) for x in content.Values]
+    values = [subContent[1][1].MCOS[1][x.oIDs[1]].data for x in valObjects]
+
+    return (; ClassName=className, ValueNames=valueNames, Values=values, ValueIndices=content.ValueIndices, BuiltinClassName=builtinClassName)
 end
 
 # Reading top level structures (should always be matrices)
@@ -382,6 +396,8 @@ function read_data(mFile::MATFile, ::Type{mxOPAQUE_CLASS}, c)
             return sName, parse_cell_metadata(metadata)
         elseif metadata[1] == 0xdd000000 
             return sName, parse_metadata(mFile, tName, cName, name, metadata)
+        elseif haskey(metadata[1], :EnumerationInstanceTag)
+            return sName, parse_enum(mFile, tName, cName, name, metadata)
         else
             error("Expected 0xdd000000 as the first metadata field got $(metadata[1])")
         end
@@ -393,7 +409,6 @@ function parse_cell_metadata(metadata)
 
     # Linking metadata
     linking = parse_linking(metadata)
-
 
     return linking, metadata[2:end]
 end
@@ -484,13 +499,13 @@ function parse_linking(meta)
         elseif class == "datametadata"
             data = read_datametadata(objects, meta, props)
         else
-            @warn "Reading not implemented for type \"$class\", writing a placeholder empty matrix instead."
-            data = zeros(Float64,0,0)
+            @warn "Reading not implemented for type \"$class\", collecting properties into a NamedTuple."
+            data = read_generic(objects, meta, props)
         end
 
         # Correct the idx (for the first empty object) matching back to the objects in the main part of MAT file
         objIdx -= 1
-        pushfirst!(objects, (; objIdx=objIdx, class=class, objID=objID, props=props, data=data))
+        pushfirst!(objects, (; objIdx=objIdx, class=class, objID=objID, props=props, data=data, names=names))
     end
 
     return objects
@@ -534,6 +549,11 @@ function parse_metadata(mFile, tName, cName, name, metadata)
     return (; name=name, tName=tName, cName=cName, dims=dims, nIDs=nIDs, oIDs=oIDs, cID=cID)
 end
 
+function parse_enum(mFile, tName, cName, name, metadata)
+    # At this point there is not much more we can do to parse this
+    return metadata[1]
+end
+
 # Read subsystem specific data structures
 function read_subsystem(mFile::MATFile)
     # First layer is a matrix-wrapper containing each subsystem element as a mxUINT8 matrix
@@ -559,10 +579,10 @@ function read_subsystem(mFile::MATFile)
     skip_padding!(mFile, 4, 8)
 
     # Rest of the matrix should be contained in a struct that we can read as usual
-    name, content = read_data(mFile)
+    names, content = read_data(mFile)
 
     # These elements do not have names, so we are skipping the return
-    return content
+    return names, content
 end
 
 function value_or_default(elements, props, needle)
@@ -615,6 +635,16 @@ function read_calendar_duration(elements, props)
 
     # TODO: Fix formating as it is ignored right now
     return data, fmt
+end
+
+function read_generic(objects, elements, props)
+    propVec = []
+
+    for prop in props
+        push!(propVec, Symbol(prop[1]) => value_or_default(elements, props, prop[1]))
+    end
+
+    return (; propVec...)
 end
 
 function read_categorical(objects, elements, props)
@@ -813,13 +843,8 @@ function read_qualmetadata(objects, elements, props)
 end
 
 function read_timemetadata(objects, elements, props)
-    propVec = []
-
-    for prop in props
-        push!(propVec, Symbol(prop[1]) => value_or_default(elements, props, prop[1]))
-    end
-
-    return (; propVec...)
+    # TODO: Make parsing more specific
+    return read_generic(objects, elements, props)
 end
 
 function read_interpolation(objects, elements, props)
