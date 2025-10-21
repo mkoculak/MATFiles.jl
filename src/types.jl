@@ -19,6 +19,15 @@ struct miUTF8       <: MatNumber end
 struct miUTF16      <: MatNumber end
 struct miUTF32      <: MatNumber end
 
+const Mat4Type = Dict(
+    '0' => miDOUBLE,
+    '1' => miSINGLE,
+    '2' => miINT32,
+    '3' => miINT16,
+    '4' => miUINT16,
+    '5' => miUINT8,
+)
+
 const MatDataType = Dict(
     1  => miINT8,
     2  => miUINT8,
@@ -96,6 +105,11 @@ struct mxUINT64_CLASS   <: NumArray end
 struct mxFUNCTION_CLASS <: MatArray end
 struct mxOPAQUE_CLASS   <: MatArray end
 
+const Array4Type = Dict(
+    '0' => :numeric,
+    '1' => :text,
+    '2' => :sparse,
+)
 const ArrayType = Dict(
     0  => mxUNKNOWN_CLASS,
     1  => mxCELL_CLASS,

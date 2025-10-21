@@ -5,23 +5,105 @@ Read a Matlab MAT file from disk.
 """
 function read_mat(file)
     open(file, "r") do io
-        # Parse information from the header
-        version, endian, fsize = read_header(io)
+        # Check the version of file.
+        # MAT file v5 and newer starts with ascii-encoded "MATLAB", so we'll check the first four bytes
+        magic = peek(io, UInt32)
+        if magic != 0x4c54414d
+            mFile = read_mat4(io, file)
+        else
+            # Parse information from the header
+            version, endian, fsize = read_header(io)
 
-        # Create an empty file to store pointer to stream and endian info
-        mFile = MATFile(abspath(file), io, version, endian, NamedTuple())
-        read_data!(mFile, fsize)
-
+            # Create an empty file to store pointer to stream and endian info
+            mFile = MATFile(abspath(file), io, version, endian, NamedTuple())
+            read_data!(mFile, fsize)
+        end
         return mFile
     end
 end
 
-function read_header(io::IO)
-    # Check the version of file.
-    # MAT file v4 starts with four bytes set to zero
-    magic = peek(io, Int32)
-    iszero(magic) && error("Detected MAT file v4 which is not implemented!")
+function read_mat4(io::IO, file)
+    # We'll assume endianess is the same for all the objects
+    endian, _, _ = read_type(io)
 
+    # MAT v4 files might contain a number of objects written sequentially
+    # Each containing a 20-byte header and data but no indication upfront, so we read in a loop until EOF.
+    seekend(io)
+    fsize = position(io)
+    seekstart(io)
+
+    mFile = MATFile(abspath(file), io, UInt16(4), endian, NamedTuple())
+
+    names = Symbol[]
+    contents = Any[]
+
+    while position(io) < fsize
+        en, format, type = read_type(io)
+        # Print a warning if endianess changes in the middle of the file
+        endian != en && @warn "Endianess changed between objects!"
+
+        nRows, nCols, imag, nameLen = Int.(ntuple(_ -> read(mFile, miUINT32), 4))
+
+        @info en, format, type, nRows, nCols, imag, nameLen
+
+        name = String(read(mFile, nameLen))
+        push!(names, Symbol(rstrip(name, '\0')))
+
+        data = read(mFile, format, (nRows, nCols))
+        
+        if imag == 1
+            data = Complex.(data, read(mFile, format, (nRows, nCols)))
+        end
+
+        # Convert to letters if text type or to sparse representation
+        if type == :text 
+            data = Char.(data)
+        elseif type == :sparse
+            # For some reason complex sparse matrices do not have the flag but contain a fourth column
+            if size(data)[2] == 4
+                data = sparse(data[:,1], data[:,2], Complex.(data[:,3], data[:,4]))
+            else
+                data = sparse(data[:,1], data[:,2], data[:,3])
+            end
+        end
+
+
+        push!(contents, data)
+    end
+
+    mFile.data = NamedTuple(zip(names, contents))
+
+    return mFile
+end
+
+function read_type(io::IO)
+    value = read(io, UInt32)
+
+    # We expect a 4-digit number, so if its bigger, we byte swap
+    sValues = string(value > UInt32(9999) ? bswap(value) : value)
+
+    # If it is still bigger, we error
+    length(sValues) > 4 && error("Unknown binary format!")
+    # If it is smaller, pad missing zeros from the left
+    sValues = length(sValues) < 4 ? lpad(sValues, 4, '0') : sValues
+    
+    if sValues[1] == '0'
+        endian = "IM"
+    elseif sValues[1] == '1'
+        endian = "MI"
+    else
+        error("Binary format of type $(sValues[1]) not implemented!")
+    end
+
+    sValues[2] == 0 && error("Expected O in the header to be zero, got $(sValues[1]) instead.")
+
+    format = Mat4Type[sValues[3]]
+    type = Array4Type[sValues[4]]
+
+    return endian, format, type
+end
+
+function read_header(io::IO)
     # Read the description
     desc = String(read(io, 116))
     @debug desc
@@ -253,7 +335,7 @@ function read_data(mFile::MATFile, ::Type{mxSPARSE_CLASS}, c)
     name = parse_name(mFile)
 
     # Indices have the same structure as dimensions subelement, so we reuse the method
-    rowIds = Int.(parse_dimensions(mFile))
+    rowIds = Int.(parse_dimensions(mFile)) .+ 1
     colIds = Int.(parse_dimensions(mFile)) .+ 1
 
     dataType, size, psize = parse_tag(mFile)
@@ -477,8 +559,6 @@ function parse_linking(meta)
             data = read_dictionary(objects, meta, props)
         elseif class == "duration"
             data = read_duration(meta, props)
-        elseif class == "function_handle_workspace"
-            data = read_function_handle(meta, props)
         elseif class == "Map"
             data = read_map(objects, meta, props)
         elseif class == "string"
@@ -712,18 +792,6 @@ function read_duration(elements, props)
     data = elements[3+millisIdx[1][3]]
 
     return data, fmt
-end
-
-function read_enumeration(elements, props)
-    @info props
-
-    return nothing
-end
-
-function read_function_handle(elements, props)
-    @info props
-
-    return nothing
 end
 
 function read_map(objects, elements, props)
