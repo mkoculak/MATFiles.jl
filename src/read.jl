@@ -155,9 +155,14 @@ function read_data!(mFile::MATFile, fsize::Int)
         push!(subContent, content)
     end
 
+    @info subContent
     # Replace placeholders with data from the subsystem
     if !isempty(subContent)
         for (i, content) in enumerate(contents)
+            # Skip all non-struct objects
+            if typeof(content) != NamedTuple
+                continue
+            end
             # Special case for enums
             if haskey(content, :EnumerationInstanceTag)
                 contents[i] = populate_enum(content, subContent)
@@ -239,9 +244,10 @@ end
 
 # Read variable compressed with zlib
 function read_data(mFile::MATFile, ::Type{miCOMPRESSED}, size)
-    # Switch the stream for the uncompressed and than revert it
+    # Switch the stream for the uncompressed data and then revert it
+    tmp = ZlibDecompressorStream(IOBuffer(read(mFile.io, size)))
     fileio = mFile.io
-    mFile.io = ZlibDecompressorStream(IOBuffer(read(fileio, size)))
+    mFile.io = tmp
 
     dataType, size, psize = parse_tag(mFile)
     name, data = read_data(mFile, dataType, size)
@@ -272,7 +278,7 @@ function parse_dimensions(mFile::MATFile)
     ndims = size ÷ sizeof(dataType)
     dims = read(mFile, dataType, ndims)
 
-    #Account for possible padding
+    # Account for possible padding
     skip_padding!(mFile, size, psize)
 
     return dims
@@ -292,7 +298,6 @@ function read_data(mFile::MATFile, T::Type{<:NumArray}, c)
     name = parse_name(mFile)
 
     dataType, size, psize = parse_tag(mFile)
-
     # Make sure declared size matches data type x dimensions of an array
     if size == 0
         emptyType = T == mxCHAR_CLASS ? Char : ConvertATypeMJ[T]
@@ -343,6 +348,13 @@ function read_data(mFile::MATFile, ::Type{mxSPARSE_CLASS}, c)
     # Parameter `dims` reflects full dimensions of the matrix, so we estimate the number
     # of elements from size from the tag
     N = size ÷ sizeof(dataType)
+    # Fallback for unlikely situation its a logical matrix (and data type should be ignored)
+    # TODO: Maybe move the logical flag inside like the complex one?
+    if size < sizeof(dataType)
+        dataType = miINT8
+        N = size
+    end
+
     data = read(mFile, dataType, N)
 
     #Account for possible padding
@@ -641,6 +653,16 @@ function read_subsystem(mFile::MATFile)
 
     # Should be a miMATRIX with full element size
     mdataType, msize, mpsize = parse_tag(mFile)
+    # Check if it is compressed and switch to uncompressed stream if necessary
+    if mdataType == miCOMPRESSED
+        tmp = ZlibDecompressorStream(IOBuffer(read(mFile.io, msize)))
+        fileio = mFile.io
+        mFile.io = tmp
+
+        # Read the actual tag of uncompressed data
+        mdataType, msize, mpsize = parse_tag(mFile)
+    end
+
     # Should be a mxUINT8_CLASS with no flags and empty nzmax
     arrayType, c, g, l, nzmax = parse_flags(mFile)
     # Should be 1 x size
@@ -660,6 +682,9 @@ function read_subsystem(mFile::MATFile)
 
     # Rest of the matrix should be contained in a struct that we can read as usual
     names, content = read_data(mFile)
+
+    # Revert to the original stream
+    mFile.io = mdataType == miCOMPRESSED ? fileio : mFile.io
 
     # These elements do not have names, so we are skipping the return
     return names, content
