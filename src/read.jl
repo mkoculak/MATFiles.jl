@@ -245,6 +245,9 @@ end
 # Read variable compressed with zlib
 function read_data(mFile::MATFile, ::Type{miCOMPRESSED}, size)
     # Switch the stream for the uncompressed data and then revert it
+    # TODO: We can add a fallback with the Deflate decompressor when zlib fails e.g. missing checksum
+    # This needs to take into account that first 2 bytes will be the zlib header
+    # and the checksum should be last 4 bytes, which limits the attempts to decode data to a managable number
     tmp = ZlibDecompressorStream(IOBuffer(read(mFile.io, size)))
     fileio = mFile.io
     mFile.io = tmp
@@ -798,6 +801,9 @@ end
 function read_dictionary(objects, elements, props)
     data = value_or_default(elements, props, "data")
 
+    # Check if the dictionary is empty
+    haskey(data, :Unconfigured) && return Dict()
+    
     # TODO: We perform this check in many objects - probably should abstract it
     # Check if the keys are another object
     dKey = nested_object_check(data.Key, objects)
