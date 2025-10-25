@@ -7,6 +7,9 @@ using SparseArrays: AbstractSparseArray, SparseMatrixCSC, sparse
 const version = pkgversion(MATIO)
 
 include("types.jl")
+include("MAT4_read.jl")
+include("MAT5_read.jl")
+include("MAT5_subsystem.jl")
 include("read.jl")
 export read_mat
 
