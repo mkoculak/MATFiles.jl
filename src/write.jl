@@ -31,7 +31,7 @@ function write_mat(f, args...)
 end
 
 function write_header!(file)
-    mseg = "MATLAB 5.0 MAT-file, Platform: $(get_os()), Created on: $(get_date()) with MATIO.jl"
+    mseg = "MATLAB 5.0 MAT-file, Platform: $(get_os()), Created on: $(get_date()) with MATFiles.jl"
 
     write(file, rpad(mseg, 116), zeros(UInt8, 8), 0x0100, 0x4d49)
 
@@ -75,7 +75,7 @@ end
 # Fallback error for unsupported types
 write_data(file, name, data) = error("Writing data of type $(typeof(data)) not yet implemented.")
 
-# Variables read by MATIO
+# Variables read by MATFiles
 write_data(file, name, data::MATFile) = write_data(file, name, data.data)
 
 # Scalar types - transform into 1x1 matrix

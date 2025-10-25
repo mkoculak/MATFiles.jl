@@ -1,6 +1,6 @@
-# MATIO
+# MATFiles
 
-[![Build Status](https://github.com/mkoculak/MATIO.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/mkoculak/MATIO.jl/actions/workflows/CI.yml?query=branch%3Amain)
+[![Build Status](https://github.com/mkoculak/MATFiles.jl/actions/workflows/CI.yml/badge.svg?branch=main)](https://github.com/mkoculak/MATFiles.jl/actions/workflows/CI.yml?query=branch%3Amain)
 
 Opinonated Julia package for reading and writing MAT files.
 Main focus is on compatibility with version 5 of the format, supporting as many data types as possible.

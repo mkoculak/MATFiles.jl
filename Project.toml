@@ -1,4 +1,4 @@
-name = "MATIO"
+name = "MATFiles"
 uuid = "e0c5a735-509d-42f9-94ca-5bb507e3a62b"
 authors = ["Marcin Koculak <koculak.marcin@gmail.com> and contributors"]
 version = "0.1.0-DEV"

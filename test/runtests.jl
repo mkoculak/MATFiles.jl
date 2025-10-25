@@ -1,6 +1,6 @@
-using MATIO
+using MATFiles
 using Test
 
-@testset "MATIO.jl" begin
+@testset "MATFiles.jl" begin
     # Write your tests here.
 end

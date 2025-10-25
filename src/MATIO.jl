@@ -1,10 +1,10 @@
-module MATIO
+module MATFiles
 
 using CodecZlib: ZlibDecompressorStream, ZlibCompressorStream, TranscodingStreams.TOKEN_END
 using Dates: DateFormat, DateTime, Month, Day, Millisecond, UTM, UNIXEPOCH, format, now
 using SparseArrays: AbstractSparseArray, SparseMatrixCSC, sparse
 
-const version = pkgversion(MATIO)
+const version = pkgversion(MATFiles)
 
 include("types.jl")
 include("MAT4_read.jl")
